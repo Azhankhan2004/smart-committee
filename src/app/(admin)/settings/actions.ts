@@ -1,0 +1,97 @@
+"use server";
+import { revalidatePath } from "next/cache";
+import { adminForAction } from "@/lib/auth";
+import { friendlyError } from "@/lib/format";
+import { normalizePhone } from "@/lib/phone";
+import { runScheduler, type SchedulerReport } from "@/lib/scheduler-engine";
+import type { ActionResult, Settings } from "@/lib/types";
+import { sendWhatsApp } from "@/lib/whatsapp";
+
+export type SettingsInput = Omit<Settings, "id" | "updated_at" | "currency"> & { currency: string };
+
+const INT_RANGES: Partial<Record<keyof SettingsInput, [number, number]>> = {
+  total_members: [2, 60],
+  payment_due_day: [1, 28],
+  reminder_days_before: [0, 27],
+  overdue_reminder_every_days: [0, 30],
+  monthly_reminder_day: [1, 28],
+  monthly_update_day: [1, 28],
+  winner_announcement_day: [1, 28],
+};
+
+export async function saveSettings(input: SettingsInput): Promise<ActionResult<Record<string, number>>> {
+  try {
+    const { db } = await adminForAction();
+    for (const [k, [min, max]] of Object.entries(INT_RANGES) as [keyof SettingsInput, [number, number]][]) {
+      const v = Number(input[k]);
+      if (!Number.isInteger(v) || v < min || v > max) return { ok: false, error: `“${k.replaceAll("_", " ")}” must be a whole number from ${min} to ${max}.` };
+    }
+    if (!(input.monthly_contribution > 0) || !(input.payout_amount > 0)) return { ok: false, error: "Amounts must be greater than zero." };
+    if (!/^\d{4}-\d{2}-01$/.test(input.start_month)) return { ok: false, error: "Please choose a valid start month." };
+    try {
+      new Intl.DateTimeFormat("en", { timeZone: input.timezone });
+    } catch {
+      return { ok: false, error: "Unknown time zone. Use a name like Asia/Karachi." };
+    }
+
+    const { error } = await db
+      .from("committee_settings")
+      .update({
+        committee_name: input.committee_name.trim(),
+        currency: input.currency.trim().toUpperCase(),
+        total_members: input.total_members,
+        monthly_contribution: input.monthly_contribution,
+        payout_amount: input.payout_amount,
+        start_month: input.start_month,
+        timezone: input.timezone,
+        payment_due_day: input.payment_due_day,
+        reminder_days_before: input.reminder_days_before,
+        remind_on_due_date: input.remind_on_due_date,
+        overdue_reminder_every_days: input.overdue_reminder_every_days,
+        monthly_reminder_day: input.monthly_reminder_day,
+        monthly_update_day: input.monthly_update_day,
+        winner_announcement_day: input.winner_announcement_day,
+        auto_send_enabled: input.auto_send_enabled,
+        auto_announce_winner: input.auto_announce_winner,
+      })
+      .eq("id", 1);
+    if (error) return { ok: false, error: friendlyError(error) };
+
+    const { data, error: genError } = await db.rpc("generate_schedule");
+    revalidatePath("/", "layout");
+    if (genError) return { ok: false, error: `Settings saved, but the schedule could not be updated: ${friendlyError(genError)}` };
+    const r = data as Record<string, number>;
+    return {
+      ok: true,
+      data: r,
+      message: `Settings saved. Schedule: ${r.created} created, ${r.updated} updated, ${r.removed} removed${r.protected ? `, ${r.protected} month(s) with history left unchanged` : ""}.`,
+    };
+  } catch (e) {
+    return { ok: false, error: friendlyError(e) };
+  }
+}
+
+export async function runSchedulerNow(dryRun: boolean): Promise<ActionResult<SchedulerReport>> {
+  try {
+    const { db } = await adminForAction();
+    const report = await runScheduler(db, { dryRun, ignoreAutoSendSwitch: true });
+    if (!dryRun) revalidatePath("/", "layout");
+    return { ok: true, data: report };
+  } catch (e) {
+    return { ok: false, error: friendlyError(e) };
+  }
+}
+
+/** Sends Meta's default "hello_world" template to check the credentials work. */
+export async function sendTestMessage(phone: string): Promise<ActionResult> {
+  try {
+    await adminForAction();
+    const p = normalizePhone(phone);
+    if (!p.ok) return { ok: false, error: p.error };
+    const res = await sendWhatsApp({ kind: "template", to: p.value, templateName: "hello_world", languageCode: "en_US", bodyParams: [] });
+    if (!res.ok) return { ok: false, error: res.error };
+    return { ok: true, message: `Test message accepted by WhatsApp (id …${res.messageId.slice(-6)}).` };
+  } catch (e) {
+    return { ok: false, error: friendlyError(e) };
+  }
+}
