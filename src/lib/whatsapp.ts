@@ -1,8 +1,10 @@
 import "server-only";
 import { waDigits } from "./phone";
+import { createServiceClient, serviceRoleConfigured } from "./supabase/admin";
 
 // Official WhatsApp Business Cloud API (Meta Graph API).
-// Credentials are read from server-side environment variables only.
+// Every committee stores its own sending number + token in the database table
+// committee_whatsapp. That table can only be read with the server's service-role key.
 
 export type WhatsAppPayload =
   | {
@@ -11,55 +13,88 @@ export type WhatsAppPayload =
       templateName: string;
       languageCode: string;
       bodyParams: string[];
+      headerImageUrl?: string | null;
     }
   | { kind: "text"; to: string; body: string };
 
 export type SendResult = { ok: true; messageId: string } | { ok: false; error: string };
 
-export function whatsappConfig() {
-  const token = process.env.WHATSAPP_ACCESS_TOKEN ?? "";
-  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID ?? "";
-  const version = process.env.WHATSAPP_API_VERSION || "v25.0";
-  // Only overridden in automated tests; production always uses Meta's Graph API.
-  const baseUrl = (process.env.WHATSAPP_API_BASE_URL || "https://graph.facebook.com").replace(/\/$/, "");
-  return { token, phoneNumberId, version, baseUrl, configured: Boolean(token && phoneNumberId) };
+export type WhatsAppConfig = {
+  configured: boolean;
+  token: string;
+  phoneNumberId: string;
+  version: string;
+  baseUrl: string;
+  displayPhone: string | null;
+};
+
+const NOT_CONFIGURED: Omit<WhatsAppConfig, "version" | "baseUrl"> = {
+  configured: false,
+  token: "",
+  phoneNumberId: "",
+  displayPhone: null,
+};
+
+function apiBase() {
+  return {
+    version: process.env.WHATSAPP_API_VERSION || "v25.0",
+    // Only overridden in automated tests; production always uses Meta's Graph API.
+    baseUrl: (process.env.WHATSAPP_API_BASE_URL || "https://graph.facebook.com").replace(/\/$/, ""),
+  };
+}
+
+/** Loads the committee's WhatsApp credentials (server only). */
+export async function getWhatsAppConfig(committeeId: string): Promise<WhatsAppConfig> {
+  const base = apiBase();
+  if (!serviceRoleConfigured()) return { ...NOT_CONFIGURED, ...base };
+  const { data } = await createServiceClient()
+    .from("committee_whatsapp")
+    .select("phone_number_id, access_token, display_phone")
+    .eq("committee_id", committeeId)
+    .maybeSingle();
+  if (!data) return { ...NOT_CONFIGURED, ...base };
+  return {
+    configured: true,
+    token: data.access_token,
+    phoneNumberId: data.phone_number_id,
+    displayPhone: data.display_phone,
+    ...base,
+  };
 }
 
 /** Safe-to-display status (never includes the token). */
-export function whatsappStatus() {
-  const c = whatsappConfig();
+export function publicStatus(cfg: WhatsAppConfig) {
   return {
-    configured: c.configured,
-    version: c.version,
-    phoneNumberIdHint: c.phoneNumberId ? `…${c.phoneNumberId.slice(-4)}` : null,
+    configured: cfg.configured,
+    version: cfg.version,
+    phoneNumberIdHint: cfg.phoneNumberId ? `…${cfg.phoneNumberId.slice(-4)}` : null,
+    displayPhone: cfg.displayPhone,
     webhookConfigured: Boolean(process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN && process.env.WHATSAPP_APP_SECRET),
   };
 }
+
+export type WhatsAppStatus = ReturnType<typeof publicStatus>;
 
 function toRequestBody(p: WhatsAppPayload) {
   const to = waDigits(p.to);
   if (p.kind === "text") {
     return { messaging_product: "whatsapp", recipient_type: "individual", to, type: "text", text: { preview_url: false, body: p.body } };
   }
+  const components: unknown[] = [];
+  if (p.headerImageUrl) components.push({ type: "header", parameters: [{ type: "image", image: { link: p.headerImageUrl } }] });
+  if (p.bodyParams.length) components.push({ type: "body", parameters: p.bodyParams.map((text) => ({ type: "text", text })) });
   return {
     messaging_product: "whatsapp",
     recipient_type: "individual",
     to,
     type: "template",
-    template: {
-      name: p.templateName,
-      language: { code: p.languageCode },
-      components: p.bodyParams.length
-        ? [{ type: "body", parameters: p.bodyParams.map((text) => ({ type: "text", text })) }]
-        : [],
-    },
+    template: { name: p.templateName, language: { code: p.languageCode }, components },
   };
 }
 
-export async function sendWhatsApp(p: WhatsAppPayload): Promise<SendResult> {
-  const cfg = whatsappConfig();
+export async function sendWhatsApp(cfg: WhatsAppConfig, p: WhatsAppPayload): Promise<SendResult> {
   if (!cfg.configured) {
-    return { ok: false, error: "WhatsApp Cloud API credentials are not configured on the server." };
+    return { ok: false, error: "WhatsApp is not connected for this committee (Settings → WhatsApp)." };
   }
   try {
     const res = await fetch(`${cfg.baseUrl}/${cfg.version}/${cfg.phoneNumberId}/messages`, {

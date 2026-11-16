@@ -1,15 +1,18 @@
 "use client";
 import { useState, useTransition } from "react";
-import { CheckCircle2, Loader2, Play, Save, Search, Send, XCircle } from "lucide-react";
+import { CheckCircle2, Copy, Loader2, Play, Save, Search, Send, Trash2, UserPlus, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Badge, Card, Field, Notice } from "@/components/ui";
 import { formatMoney } from "@/lib/format";
 import type { SchedulerReport } from "@/lib/scheduler-engine";
 import { TEMPLATE_LABELS } from "@/lib/templates";
 import type { Settings } from "@/lib/types";
-import { runSchedulerNow, saveSettings, sendTestMessage, type SettingsInput } from "./actions";
+import type { WhatsAppStatus } from "@/lib/whatsapp";
+import {
+  addAdmin, clearWhatsApp, removeAdmin, runSchedulerNow, saveLogo, savePublicPage, saveSettings, saveWhatsApp, sendTestMessage, type SettingsInput,
+} from "./actions";
 
-type WA = { configured: boolean; version: string; phoneNumberIdHint: string | null; webhookConfigured: boolean };
+type WA = WhatsAppStatus;
 
 function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string }) {
   return (
@@ -25,6 +28,26 @@ function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange
       </span>
     </label>
   );
+}
+
+/** Shrinks an image to fit a size×size square and returns a PNG data URL. */
+function resizeImage(file: File, size: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(size / img.width, size / img.height, 1);
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(img.src);
+      resolve(canvas.toDataURL("image/png"));
+    };
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
 }
 
 function Status({ ok, label }: { ok: boolean; label: string }) {
@@ -43,15 +66,32 @@ export function SettingsClient({
   admins,
   wa,
   server,
+  committee,
+  currentUserId,
 }: {
   settings: Settings;
   isOwner: boolean;
   hasHistory: boolean;
-  admins: { email: string; role: string; is_active: boolean }[];
+  admins: { user_id: string; email: string | null; role: string }[];
   wa: WA;
   server: { cronSecret: boolean; serviceRole: boolean; appUrl: string };
+  committee: { slug: string; publicEnabled: boolean; logo: string | null };
+  currentUserId: string;
 }) {
-  const { id: _id, updated_at: _u, ...initial } = settings;
+  const { committee_id: _id, updated_at: _u, ...initial } = settings;
+  const [pub, setPub] = useState({ slug: committee.slug, public_enabled: committee.publicEnabled });
+  const [newAdmin, setNewAdmin] = useState({ email: "", role: "admin" as "owner" | "admin" });
+  const [waForm, setWaForm] = useState({ phoneNumberId: "", accessToken: "", businessAccountId: "", displayPhone: wa.displayPhone ?? "" });
+  const [busy, startBusy] = useTransition();
+  const act = (fn: () => Promise<{ ok: boolean; message?: string; error?: string }>, after?: () => void) =>
+    startBusy(async () => {
+      const r = await fn();
+      if (r.ok) {
+        toast.success(r.message);
+        after?.();
+      } else toast.error(r.error);
+    });
+  const publicUrl = `${server.appUrl}/p/${committee.slug}`;
   const [f, setF] = useState<SettingsInput>(initial);
   const [pending, start] = useTransition();
   const [running, startRun] = useTransition();
@@ -148,6 +188,14 @@ export function SettingsClient({
               <input id="wd" className="input" type="number" min={1} max={28} value={f.winner_announcement_day} onChange={num("winner_announcement_day")} />
             </Field>
           </div>
+          <div className="mt-5">
+            <Field label="How is each month’s winner chosen?" htmlFor="ws">
+              <select id="ws" className="input" value={f.winner_selection} onChange={(e) => set("winner_selection", e.target.value as SettingsInput["winner_selection"])}>
+                <option value="sequence">Fixed order (A → Q, or the order you set on the Winners page)</option>
+                <option value="lucky_draw">Lucky draw every month (random, among members who haven’t won)</option>
+              </select>
+            </Field>
+          </div>
           <div className="mt-5 space-y-4">
             <Toggle checked={f.remind_on_due_date} onChange={(v) => set("remind_on_due_date", v)} label="Remind on the due date" />
             <Toggle
@@ -159,8 +207,8 @@ export function SettingsClient({
             <Toggle
               checked={f.auto_announce_winner}
               onChange={(v) => set("auto_announce_winner", v)}
-              label="Announce the winner automatically on the announcement day"
-              hint="Uses the saved winner order. Leave off if you prefer to announce manually."
+              label="Pick the winner automatically on the announcement day"
+              hint={f.winner_selection === "lucky_draw" ? "The scheduler holds the lucky draw by itself and messages the winner." : "Uses the saved winner order. Leave off to announce manually."}
             />
           </div>
         </Card>
@@ -215,12 +263,14 @@ export function SettingsClient({
           )}
         </Card>
 
-        <Card title="WhatsApp Cloud API">
+        <Card title="WhatsApp (this committee’s sending number)">
           {wa.configured ? (
             <>
-              <p className="text-sm">Connected · phone number ID {wa.phoneNumberIdHint} · Graph API {wa.version}</p>
-              <p className="mt-1 text-sm">Delivery webhook: {wa.webhookConfigured ? <Badge tone="green">configured</Badge> : <Badge tone="amber">not configured</Badge>}</p>
-              {server.appUrl && <p className="mt-1 break-all text-xs text-slate-500">Webhook URL: {server.appUrl}/api/whatsapp/webhook</p>}
+              <p className="text-sm">
+                <Badge tone="green">Connected</Badge> {wa.displayPhone ? <b className="ml-1">{wa.displayPhone}</b> : null} · phone number ID {wa.phoneNumberIdHint}
+              </p>
+              <p className="mt-1 text-sm">Delivery receipts: {wa.webhookConfigured ? <Badge tone="green">on</Badge> : <Badge tone="amber">off</Badge>}</p>
+              <p className="mt-1 break-all text-xs text-slate-500">Webhook URL: {server.appUrl}/api/whatsapp/webhook</p>
               <div className="mt-4 flex gap-2">
                 <input className="input" placeholder="+92 300 1234567" value={testPhone} onChange={(e) => setTestPhone(e.target.value)} aria-label="Test number" />
                 <button
@@ -235,30 +285,130 @@ export function SettingsClient({
                   {testing ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />} Test
                 </button>
               </div>
-              <p className="mt-1 text-xs text-slate-500">Sends Meta’s built-in “hello_world” template. With a test number, the recipient must be added to the allowed list in Meta first.</p>
+              <p className="mt-1 text-xs text-slate-500">Sends Meta’s built-in “hello_world” template.</p>
             </>
           ) : (
-            <Notice tone="amber" title="Requires API credentials">
-              Add <code>WHATSAPP_ACCESS_TOKEN</code> and <code>WHATSAPP_PHONE_NUMBER_ID</code> to the server environment (see docs/WHATSAPP_SETUP.md). Until then, every notification can be shared manually with a prefilled WhatsApp link.
+            <Notice tone="amber" title="Not connected yet">
+              Until a number is connected, every message can still be sent manually with a ready-made WhatsApp link.
             </Notice>
+          )}
+          {isOwner && (
+            <details className="mt-4 rounded-xl border border-slate-200 p-3 dark:border-slate-700" open={!wa.configured}>
+              <summary className="cursor-pointer text-sm font-semibold">{wa.configured ? "Change WhatsApp credentials" : "Connect a WhatsApp number"}</summary>
+              <form
+                className="mt-3 space-y-3"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  act(() => saveWhatsApp(waForm), () => setWaForm({ ...waForm, accessToken: "" }));
+                }}
+              >
+                <Field label="Phone number ID" htmlFor="wa-pnid" hint="Meta → WhatsApp → API Setup (digits only)">
+                  <input id="wa-pnid" className="input" inputMode="numeric" value={waForm.phoneNumberId} onChange={(e) => setWaForm({ ...waForm, phoneNumberId: e.target.value })} placeholder={wa.phoneNumberIdHint ?? ""} />
+                </Field>
+                <Field label="Access token" htmlFor="wa-token" hint={wa.configured ? "Leave empty to keep the saved token." : "Permanent token from a Meta system user. Stored securely; never shown again."}>
+                  <input id="wa-token" className="input" type="password" autoComplete="off" value={waForm.accessToken} onChange={(e) => setWaForm({ ...waForm, accessToken: e.target.value })} />
+                </Field>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Business account ID (optional)" htmlFor="wa-waba">
+                    <input id="wa-waba" className="input" inputMode="numeric" value={waForm.businessAccountId} onChange={(e) => setWaForm({ ...waForm, businessAccountId: e.target.value })} />
+                  </Field>
+                  <Field label="Number shown to admins" htmlFor="wa-disp">
+                    <input id="wa-disp" className="input" value={waForm.displayPhone} onChange={(e) => setWaForm({ ...waForm, displayPhone: e.target.value })} placeholder="+92 300 1234567" />
+                  </Field>
+                </div>
+                <div className="flex gap-2">
+                  <button className="btn btn-primary" disabled={busy}>{busy && <Loader2 className="size-4 animate-spin" />} Save</button>
+                  {wa.configured && (
+                    <button type="button" className="btn btn-ghost text-rose-600" disabled={busy} onClick={() => window.confirm("Disconnect WhatsApp for this committee?") && act(clearWhatsApp)}>
+                      Disconnect
+                    </button>
+                  )}
+                </div>
+              </form>
+            </details>
           )}
         </Card>
       </div>
 
-      <Card title="Admins">
-        <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-          {admins.map((a) => (
-            <li key={a.email} className="flex items-center gap-2 py-2 text-sm">
-              {a.email}
-              <Badge tone={a.role === "owner" ? "gold" : "gray"}>{a.role}</Badge>
-              {!a.is_active && <Badge tone="red">disabled</Badge>}
-            </li>
-          ))}
-        </ul>
-        <p className="mt-3 text-xs text-slate-500">
-          {isOwner ? "You are an owner. " : ""}To add an admin: create the user in Supabase → Authentication → Users, then run the SQL in README → “Admin login setup”.
-        </p>
-      </Card>
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Card title="Public page (letters only)">
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            Anyone with the link sees the committee name, the letters A–Q, winners by letter and the draw history. Names, numbers and individual payments stay private.
+          </p>
+          <div className="mt-3 flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800/60">
+            <span className="min-w-0 flex-1 truncate">{publicUrl}</span>
+            <button className="btn btn-ghost btn-sm" onClick={() => navigator.clipboard.writeText(publicUrl).then(() => toast.success("Link copied"))} aria-label="Copy link">
+              <Copy className="size-4" />
+            </button>
+          </div>
+          {isOwner && (
+            <div className="mt-4 space-y-3">
+              <Field label="Web address" htmlFor="slug" hint="Lowercase letters, numbers and dashes.">
+                <input id="slug" className="input" value={pub.slug} onChange={(e) => setPub({ ...pub, slug: e.target.value.toLowerCase() })} />
+              </Field>
+              <Toggle checked={pub.public_enabled} onChange={(v) => setPub({ ...pub, public_enabled: v })} label="Public page is visible" />
+              <div>
+                <p className="label">Committee logo</p>
+                <div className="flex items-center gap-3">
+                  {committee.logo ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={committee.logo} alt="Logo" className="size-14 rounded-xl bg-white object-contain p-1 ring-1 ring-slate-200" />
+                  ) : (
+                    <div className="grid size-14 place-items-center rounded-xl bg-slate-100 text-xs text-slate-400 dark:bg-slate-800">None</div>
+                  )}
+                  <label className="btn btn-secondary btn-sm cursor-pointer">
+                    Upload
+                    <input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      resizeImage(file, 256).then((url) => act(() => saveLogo(url))).catch(() => toast.error("Could not read that image."));
+                    }} />
+                  </label>
+                  {committee.logo && <button className="btn btn-ghost btn-sm text-rose-600" onClick={() => act(() => saveLogo(null))}>Remove</button>}
+                </div>
+                <p className="mt-1 text-xs text-slate-500">Shown in the app, on the public page and on winner banners.</p>
+              </div>
+              <button className="btn btn-secondary" disabled={busy} onClick={() => act(() => savePublicPage(pub))}>Save public page</button>
+            </div>
+          )}
+        </Card>
+
+        <Card title="Admins of this committee">
+          <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+            {admins.map((a) => (
+              <li key={a.user_id} className="flex items-center gap-2 py-2 text-sm">
+                <span className="min-w-0 flex-1 truncate">{a.email ?? a.user_id}</span>
+                <Badge tone={a.role === "owner" ? "gold" : "gray"}>{a.role}</Badge>
+                {isOwner && a.user_id !== currentUserId && (
+                  <button className="btn btn-ghost btn-sm text-rose-600" aria-label={`Remove ${a.email}`} disabled={busy}
+                    onClick={() => window.confirm(`Remove ${a.email ?? "this admin"}?`) && act(() => removeAdmin(a.user_id))}>
+                    <Trash2 className="size-4" />
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+          {isOwner ? (
+            <form
+              className="mt-4 flex flex-col gap-2 sm:flex-row"
+              onSubmit={(e) => {
+                e.preventDefault();
+                act(() => addAdmin(newAdmin.email, newAdmin.role), () => setNewAdmin({ email: "", role: "admin" }));
+              }}
+            >
+              <input className="input" type="email" required placeholder="their@email.com" value={newAdmin.email} onChange={(e) => setNewAdmin({ ...newAdmin, email: e.target.value })} aria-label="Admin email" />
+              <select className="input sm:w-32" value={newAdmin.role} onChange={(e) => setNewAdmin({ ...newAdmin, role: e.target.value as "owner" | "admin" })} aria-label="Role">
+                <option value="admin">Admin</option>
+                <option value="owner">Owner</option>
+              </select>
+              <button className="btn btn-primary shrink-0" disabled={busy}><UserPlus className="size-4" /> Add</button>
+            </form>
+          ) : (
+            <p className="mt-3 text-xs text-slate-500">Only owners can add or remove admins.</p>
+          )}
+          <p className="mt-2 text-xs text-slate-500">The person must first create an account on the sign-up page.</p>
+        </Card>
+      </div>
     </div>
   );
 }

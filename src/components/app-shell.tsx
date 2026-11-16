@@ -3,7 +3,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import {
-  BarChart3, Bell, CreditCard, FileClock, Image as ImageIcon, LayoutDashboard, LogOut, Menu, Settings, Trophy, Users, X,
+  BarChart3, Bell, Check, ChevronsUpDown, CreditCard, Dices, ExternalLink, FileClock, Image as ImageIcon, LayoutDashboard,
+  LogOut, Menu, Plus, Settings, Sparkles, Trophy, Users, X,
 } from "lucide-react";
 import { cn } from "@/lib/format";
 import { ThemeToggle } from "./theme-toggle";
@@ -13,6 +14,8 @@ const NAV = [
   { href: "/payments", label: "Payments", icon: CreditCard },
   { href: "/winners", label: "Winners", icon: Trophy },
   { href: "/members", label: "Members", icon: Users },
+  { href: "/draw", label: "Lucky draw", icon: Dices },
+  { href: "/banners", label: "Winner banners", icon: Sparkles },
   { href: "/notifications", label: "Notifications", icon: Bell },
   { href: "/posters", label: "Posters", icon: ImageIcon },
   { href: "/reports", label: "Reports", icon: BarChart3 },
@@ -50,18 +53,73 @@ function SignOut({ compact }: { compact?: boolean }) {
   );
 }
 
-export function AppShell({ children, committeeName, email, role }: { children: ReactNode; committeeName: string; email: string; role: string }) {
+type ShellCommittee = { id: string; name: string; slug: string; publicEnabled: boolean; logo: string | null };
+
+function CommitteeSwitcher({ committee, committees }: { committee: ShellCommittee; committees: { id: string; name: string; role: string }[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-left text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+        aria-expanded={open}
+      >
+        {committee.logo && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={committee.logo} alt="" className="size-9 shrink-0 rounded-lg bg-white object-contain p-0.5 ring-1 ring-slate-200" />
+        )}
+        <span className="min-w-0 flex-1">
+          <span className="block text-[11px] uppercase tracking-wide text-slate-500">Committee</span>
+          <span className="block truncate font-semibold">{committee.name}</span>
+        </span>
+        <ChevronsUpDown className="size-4 text-slate-400" />
+      </button>
+      {open && (
+        <div className="absolute inset-x-0 top-full z-40 mt-1 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900">
+          {committees.map((c) => (
+            <a key={c.id} href={`/committees/switch?id=${c.id}`} className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-800">
+              <span className="min-w-0 flex-1 truncate">{c.name}</span>
+              <span className="text-[11px] capitalize text-slate-400">{c.role}</span>
+              {c.id === committee.id && <Check className="size-4 text-brand-600" />}
+            </a>
+          ))}
+          <Link href="/committees" onClick={() => setOpen(false)} className="flex items-center gap-2 border-t border-slate-100 px-3 py-2 text-sm font-medium text-brand-700 hover:bg-slate-50 dark:border-slate-800 dark:text-brand-300 dark:hover:bg-slate-800">
+            <Plus className="size-4" /> All committees / create new
+          </Link>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function AppShell({
+  children,
+  committee,
+  committees,
+  email,
+  role,
+}: {
+  children: ReactNode;
+  committee: ShellCommittee;
+  committees: { id: string; name: string; role: string }[];
+  email: string;
+  role: string;
+}) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
+  const committeeName = committee.name;
 
   return (
     <div className="min-h-dvh">
       {/* Desktop sidebar */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-slate-200 bg-white px-3 py-4 lg:flex dark:border-slate-800 dark:bg-slate-900">
         <div className="px-2">
-          <Logo name={committeeName} />
+          <Logo name="Smart Committee" />
         </div>
-        <nav className="mt-6 flex-1 space-y-0.5">
+        <div className="mt-4">
+          <CommitteeSwitcher committee={committee} committees={committees} />
+        </div>
+        <nav className="mt-4 flex-1 space-y-0.5 overflow-y-auto">
           {NAV.map(({ href, label, icon: Icon }) => (
             <Link
               key={href}
@@ -78,6 +136,11 @@ export function AppShell({ children, committeeName, email, role }: { children: R
           ))}
         </nav>
         <div className="space-y-1 border-t border-slate-200 pt-3 dark:border-slate-800">
+          {committee.publicEnabled && (
+            <a href={`/p/${committee.slug}`} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm w-full justify-start">
+              <ExternalLink className="size-4" /> Public page
+            </a>
+          )}
           <div className="px-3 pb-1">
             <p className="truncate text-xs font-medium">{email}</p>
             <p className="text-[11px] capitalize text-slate-500">{role}</p>
@@ -89,7 +152,15 @@ export function AppShell({ children, committeeName, email, role }: { children: R
 
       {/* Mobile top bar */}
       <header className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur lg:hidden dark:border-slate-800 dark:bg-slate-900/90">
-        <Logo name={committeeName} />
+        <div className="flex min-w-0 items-center gap-2.5">
+          {committee.logo ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={committee.logo} alt="" className="size-9 rounded-xl bg-white object-contain p-0.5 ring-1 ring-slate-200" />
+          ) : (
+            <Logo name={committeeName} />
+          )}
+          {committee.logo && <p className="truncate text-sm font-bold">{committeeName}</p>}
+        </div>
         <ThemeToggle />
       </header>
 
@@ -153,6 +224,14 @@ export function AppShell({ children, committeeName, email, role }: { children: R
               ))}
             </div>
             <div className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-800">
+              <div className="mb-3">
+                <CommitteeSwitcher committee={committee} committees={committees} />
+              </div>
+              {committee.publicEnabled && (
+                <a href={`/p/${committee.slug}`} target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm mb-2 w-full">
+                  <ExternalLink className="size-4" /> Open public page
+                </a>
+              )}
               <p className="mb-2 truncate px-1 text-xs text-slate-500">Signed in as {email}</p>
               <SignOut compact />
             </div>

@@ -13,12 +13,12 @@ import type { NotificationLog } from "@/lib/types";
 export default async function MemberDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!/^[0-9a-f-]{36}$/.test(id)) notFound();
-  const { db } = await requireAdmin();
+  const { db, committeeId } = await requireAdmin();
   const [members, settings, payments, logsRes] = await Promise.all([
-    getMembers(db),
-    getSettings(db),
-    getPayments(db, { memberId: id }),
-    db.from("notification_logs").select("*").eq("member_id", id).order("created_at", { ascending: false }).limit(20),
+    getMembers(db, committeeId),
+    getSettings(db, committeeId),
+    getPayments(db, committeeId, { memberId: id }),
+    db.from("notification_logs").select("*").eq("member_id", id).eq("committee_id", committeeId).order("created_at", { ascending: false }).limit(20),
   ]);
   const m = members.find((x) => x.id === id);
   if (!m) notFound();

@@ -7,8 +7,8 @@ import { TemplatesClient } from "./templates-client";
 export const metadata = { title: "Message templates" };
 
 export default async function TemplatesPage() {
-  const { db } = await requireAdmin();
-  const templates = await getTemplates(db);
+  const { db, committeeId } = await requireAdmin();
+  const templates = await getTemplates(db, committeeId);
   return (
     <>
       <PageHeader title="Message templates" description="Edit the wording of each WhatsApp message. Placeholders like {{member_name}} are filled in automatically." />

@@ -20,7 +20,7 @@ function refresh() {
 
 export async function saveMember(input: MemberInput): Promise<ActionResult> {
   try {
-    const { db } = await adminForAction();
+    const { db, committeeId } = await adminForAction();
     const slot = input.slot_code.trim().toUpperCase();
     if (!/^[A-Z]{1,3}[0-9]{0,2}$/.test(slot)) return { ok: false, error: "Slot code must be letters (e.g. A, B … Q, or AA)." };
 
@@ -41,11 +41,11 @@ export async function saveMember(input: MemberInput): Promise<ActionResult> {
     };
 
     if (input.id) {
-      const { error } = await db.from("members").update(row).eq("id", input.id);
+      const { error } = await db.from("members").update(row).eq("id", input.id).eq("committee_id", committeeId);
       if (error) return { ok: false, error: friendlyError(error) };
     } else {
-      const { data: last } = await db.from("members").select("display_order").order("display_order", { ascending: false }).limit(1).maybeSingle();
-      const { error } = await db.from("members").insert({ ...row, display_order: (last?.display_order ?? 0) + 1 });
+      const { data: last } = await db.from("members").select("display_order").eq("committee_id", committeeId).order("display_order", { ascending: false }).limit(1).maybeSingle();
+      const { error } = await db.from("members").insert({ ...row, committee_id: committeeId, display_order: (last?.display_order ?? 0) + 1 });
       if (error) return { ok: false, error: friendlyError(error) };
     }
     refresh();
@@ -57,7 +57,7 @@ export async function saveMember(input: MemberInput): Promise<ActionResult> {
 
 export async function setMemberActive(id: string, active: boolean, reason: string): Promise<ActionResult> {
   try {
-    const { db } = await adminForAction();
+    const { db, committeeId } = await adminForAction();
     const { data, error } = await db.rpc("set_member_active", { p_member_id: id, p_active: active, p_reason: reason });
     if (error) return { ok: false, error: friendlyError(error) };
     refresh();

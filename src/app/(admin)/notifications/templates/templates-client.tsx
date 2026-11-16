@@ -51,6 +51,7 @@ function Editor({ t }: { t: Template }) {
           <p className="text-xs text-slate-500">{t.description}</p>
         </div>
         {!t.is_active && <Badge tone="amber">Off</Badge>}
+        {t.meta_header_image && <Badge tone="gold">+ winner banner image</Badge>}
         {t.meta_template_name ? <Badge tone="green">Meta: {t.meta_template_name}</Badge> : <Badge>Text only</Badge>}
         <ChevronDown className={`size-4 transition ${open ? "rotate-180" : ""}`} />
       </button>
@@ -110,7 +111,7 @@ function Editor({ t }: { t: Template }) {
 }
 
 export function TemplatesClient({ templates }: { templates: Template[] }) {
-  const order = ["monthly_reminder", "winner_announcement", "payment_due", "payment_overdue", "payment_received", "new_month_update"];
+  const order = ["monthly_reminder", "winner_announcement", "payment_due", "payment_overdue", "payment_received", "new_month_update", "winner_personal"];
   return (
     <div className="space-y-3">
       <Notice tone="blue">

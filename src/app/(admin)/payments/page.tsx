@@ -3,15 +3,15 @@ import { requireAdmin } from "@/lib/auth";
 import { committeePosition } from "@/lib/committee";
 import { getPayments, getSchedules, getSettings } from "@/lib/data";
 import { todayInTimeZone } from "@/lib/dates";
-import { whatsappStatus } from "@/lib/whatsapp";
+import { getWhatsAppConfig, publicStatus } from "@/lib/whatsapp";
 import { PaymentsClient } from "./payments-client";
 
 export const metadata = { title: "Payments" };
 
 export default async function PaymentsPage({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
   const sp = await searchParams;
-  const { db } = await requireAdmin();
-  const [settings, schedules] = await Promise.all([getSettings(db), getSchedules(db)]);
+  const { db, committeeId } = await requireAdmin();
+  const [settings, schedules] = await Promise.all([getSettings(db, committeeId), getSchedules(db, committeeId)]);
   if (!settings || schedules.length === 0) return <EmptyState title="No schedule yet">Open Settings and save to generate the schedule.</EmptyState>;
 
   const today = todayInTimeZone(settings.timezone);
@@ -21,7 +21,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
     schedules.find((s) => s.month_number === requested) ??
     pos.current ??
     (pos.state === "finished" ? schedules[schedules.length - 1] : schedules[0]);
-  const payments = await getPayments(db, { scheduleId: selected.id });
+  const payments = await getPayments(db, committeeId, { scheduleId: selected.id });
 
   return (
     <>
@@ -33,7 +33,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
         payments={payments}
         currency={settings.currency}
         today={today}
-        whatsappConfigured={whatsappStatus().configured}
+        whatsappConfigured={publicStatus(await getWhatsAppConfig(committeeId)).configured}
       />
     </>
   );

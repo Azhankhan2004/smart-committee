@@ -1,14 +1,17 @@
 import { AppShell } from "@/components/app-shell";
 import { requireAdmin } from "@/lib/auth";
-import { getSettings } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  const { db, email, role } = await requireAdmin();
-  const settings = await getSettings(db).catch(() => null);
+  const { email, role, committee, committees } = await requireAdmin();
   return (
-    <AppShell committeeName={settings?.committee_name ?? "Committee"} email={email} role={role}>
+    <AppShell
+      committee={{ id: committee.id, name: committee.name, slug: committee.slug, publicEnabled: committee.public_enabled, logo: committee.logo }}
+      committees={committees.map((c) => ({ id: c.id, name: c.name, role: c.role }))}
+      email={email}
+      role={role}
+    >
       {children}
     </AppShell>
   );

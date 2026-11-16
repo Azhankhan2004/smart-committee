@@ -10,7 +10,7 @@ export function LoginForm() {
   const params = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(params.get("error"));
   const [loading, setLoading] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {

@@ -40,10 +40,10 @@ const fmt = (v: unknown) => (v === null || v === undefined ? "—" : typeof v ==
 export default async function AuditPage({ searchParams }: { searchParams: Promise<{ page?: string; entity?: string }> }) {
   const sp = await searchParams;
   const page = Math.max(1, Number(sp.page) || 1);
-  const { db } = await requireAdmin();
-  let q = db.from("audit_logs").select("*", { count: "exact" }).order("occurred_at", { ascending: false }).order("id", { ascending: false }).range((page - 1) * PAGE, page * PAGE - 1);
+  const { db, committeeId } = await requireAdmin();
+  let q = db.from("audit_logs").select("*", { count: "exact" }).eq("committee_id", committeeId).order("occurred_at", { ascending: false }).order("id", { ascending: false }).range((page - 1) * PAGE, page * PAGE - 1);
   if (sp.entity) q = q.eq("entity_type", sp.entity);
-  const [{ data, count, error }, settings] = await Promise.all([q, getSettings(db)]);
+  const [{ data, count, error }, settings] = await Promise.all([q, getSettings(db, committeeId)]);
   const logs = (data ?? []) as AuditLog[];
   const pages = Math.max(1, Math.ceil((count ?? 0) / PAGE));
   const link = (p: number, e = sp.entity) => `/audit?page=${p}${e ? `&entity=${e}` : ""}`;

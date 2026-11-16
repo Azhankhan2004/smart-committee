@@ -8,7 +8,7 @@ import { contextFor, dispatchNotification, emptySummary, retryNotification, tall
 import { waLink } from "@/lib/phone";
 import { dedupeKeyFor, renderTemplate, TEMPLATE_LABELS, unknownPlaceholders } from "@/lib/templates";
 import { TEMPLATE_KEYS, type ActionResult, type TemplateKey } from "@/lib/types";
-import { whatsappConfig } from "@/lib/whatsapp";
+import { getWhatsAppConfig } from "@/lib/whatsapp";
 
 export type Audience = "all" | "unpaid" | "one";
 
@@ -29,11 +29,11 @@ async function resolve(req: Req) {
   const ctx = await adminForAction();
   if (!TEMPLATE_KEYS.includes(req.templateKey)) throw new Error("Unknown notification type.");
   const [settings, schedules, members, templates, payments] = await Promise.all([
-    getSettings(ctx.db),
-    getSchedules(ctx.db),
-    getMembers(ctx.db),
-    getTemplates(ctx.db),
-    getPayments(ctx.db, { scheduleId: req.scheduleId }),
+    getSettings(ctx.db, ctx.committeeId),
+    getSchedules(ctx.db, ctx.committeeId),
+    getMembers(ctx.db, ctx.committeeId),
+    getTemplates(ctx.db, ctx.committeeId),
+    getPayments(ctx.db, ctx.committeeId, { scheduleId: req.scheduleId }),
   ]);
   if (!settings) throw new Error("Settings missing.");
   const template = templates.find((t) => t.key === req.templateKey);
@@ -73,6 +73,7 @@ export async function buildPreview(req: Req): Promise<ActionResult<{ items: Prev
     const { data: manual } = await ctx.db
       .from("notification_logs")
       .select("member_id")
+      .eq("committee_id", ctx.committeeId)
       .eq("template_key", req.templateKey)
       .eq("schedule_id", req.scheduleId)
       .eq("status", "manual_opened");
@@ -82,7 +83,7 @@ export async function buildPreview(req: Req): Promise<ActionResult<{ items: Prev
     return {
       ok: true,
       data: {
-        apiConfigured: whatsappConfig().configured,
+        apiConfigured: (await getWhatsAppConfig(ctx.committeeId)).configured,
         templateActive: template.is_active,
         items: items.map((i) => {
           const st = statusByKey.get(i.dedupeKey) ?? null;
@@ -106,8 +107,9 @@ export async function buildPreview(req: Req): Promise<ActionResult<{ items: Prev
 
 export async function sendNotifications(req: Req & { resend: boolean }): Promise<ActionResult<SendSummary>> {
   try {
-    if (!whatsappConfig().configured) return { ok: false, error: "The WhatsApp Cloud API is not configured. Use the manual WhatsApp buttons instead." };
     const { ctx, template, items } = await resolve(req);
+    const cfg = await getWhatsAppConfig(ctx.committeeId);
+    if (!cfg.configured) return { ok: false, error: "WhatsApp is not connected for this committee. Use the manual WhatsApp buttons instead." };
     if (!template.is_active) return { ok: false, error: "This template is switched off. Turn it on under Templates first." };
     const summary = emptySummary();
     // Members already reached by a manual WhatsApp share count as "already sent" too.
@@ -127,6 +129,8 @@ export async function sendNotifications(req: Req & { resend: boolean }): Promise
         continue;
       }
       const outcome = await dispatchNotification(ctx.db, {
+        cfg,
+        committeeId: ctx.committeeId,
         template,
         member: i.member,
         scheduleId: req.scheduleId,
@@ -146,8 +150,9 @@ export async function sendNotifications(req: Req & { resend: boolean }): Promise
 
 export async function logManualShare(input: { templateKey: TemplateKey; memberId: string; scheduleId: string | null; body: string; phone: string | null }): Promise<ActionResult> {
   try {
-    const { db, userId } = await adminForAction();
+    const { db, userId, committeeId } = await adminForAction();
     const { error } = await db.from("notification_logs").insert({
+      committee_id: committeeId,
       template_key: input.templateKey,
       member_id: input.memberId,
       schedule_id: input.scheduleId,
@@ -167,8 +172,8 @@ export async function logManualShare(input: { templateKey: TemplateKey; memberId
 
 export async function retryLog(logId: string): Promise<ActionResult> {
   try {
-    const { db } = await adminForAction();
-    const outcome = await retryNotification(db, logId);
+    const { db, committeeId } = await adminForAction();
+    const outcome = await retryNotification(db, await getWhatsAppConfig(committeeId), logId, committeeId);
     revalidatePath("/notifications/logs");
     if (outcome.status === "sent") return { ok: true, message: "Message sent." };
     if (outcome.status === "not_configured") return { ok: false, error: "WhatsApp Cloud API is not configured." };
@@ -180,10 +185,17 @@ export async function retryLog(logId: string): Promise<ActionResult> {
 
 export async function retryAllFailed(): Promise<ActionResult<SendSummary>> {
   try {
-    const { db } = await adminForAction();
-    const { data } = await db.from("notification_logs").select("id, recipient_phone").eq("status", "failed").eq("channel", "whatsapp_api").limit(100);
+    const { db, committeeId } = await adminForAction();
+    const { data } = await db
+      .from("notification_logs")
+      .select("id, recipient_phone")
+      .eq("committee_id", committeeId)
+      .eq("status", "failed")
+      .eq("channel", "whatsapp_api")
+      .limit(100);
+    const cfg = await getWhatsAppConfig(committeeId);
     const summary = emptySummary();
-    for (const l of data ?? []) tally(summary, await retryNotification(db, l.id), l.recipient_phone ?? l.id);
+    for (const l of data ?? []) tally(summary, await retryNotification(db, cfg, l.id, committeeId), l.recipient_phone ?? l.id);
     revalidatePath("/notifications/logs");
     return { ok: true, data: summary };
   } catch (e) {
@@ -200,7 +212,7 @@ export async function saveTemplate(input: {
   is_active: boolean;
 }): Promise<ActionResult> {
   try {
-    const { db } = await adminForAction();
+    const { db, committeeId } = await adminForAction();
     const body = input.body.trim();
     if (body.length < 10) return { ok: false, error: "The message is too short." };
     if (body.length > 1024) return { ok: false, error: "WhatsApp template bodies are limited to 1024 characters." };

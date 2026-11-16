@@ -7,19 +7,19 @@ import { committeePosition } from "@/lib/committee";
 import { getMembers, getPayments, getSchedules, getSettings } from "@/lib/data";
 import { diffDays, formatDate, monthLabel, shortMonthLabel, todayInTimeZone } from "@/lib/dates";
 import { formatMoney, memberLabel, percent } from "@/lib/format";
-import { whatsappStatus } from "@/lib/whatsapp";
+import { getWhatsAppConfig, publicStatus } from "@/lib/whatsapp";
 
 export default async function DashboardPage() {
-  const { db } = await requireAdmin();
-  const settings = await getSettings(db);
+  const { db, committeeId } = await requireAdmin();
+  const settings = await getSettings(db, committeeId);
   if (!settings) {
     return <Notice tone="red" title="Database not initialised">Run the migration and seed scripts from the README, then reload.</Notice>;
   }
-  const [schedules, members] = await Promise.all([getSchedules(db), getMembers(db)]);
+  const [schedules, members] = await Promise.all([getSchedules(db, committeeId), getMembers(db, committeeId)]);
   const today = todayInTimeZone(settings.timezone);
   const pos = committeePosition(schedules, today);
   const cur = pos.current;
-  const payments = cur ? await getPayments(db, { scheduleId: cur.id }) : [];
+  const payments = cur ? await getPayments(db, committeeId, { scheduleId: cur.id }) : [];
   const cc = settings.currency;
 
   const totalCollected = schedules.reduce((s, m) => s + m.collected_total, 0);
@@ -37,7 +37,7 @@ export default async function DashboardPage() {
   const deadlineMonth = cur && today <= cur.due_date ? cur : pos.next;
   const daysLeft = deadlineMonth ? diffDays(deadlineMonth.due_date, today) : null;
 
-  const wa = whatsappStatus();
+  const wa = publicStatus(await getWhatsAppConfig(committeeId));
   const missingPhones = activeMembers.filter((m) => !m.phone_e164).length;
   const expectedPayout = settings.monthly_contribution * activeMembers.length;
 
@@ -70,14 +70,15 @@ export default async function DashboardPage() {
           <>
             <Link href="/payments" className="btn btn-primary">Record a payment</Link>
             <Link href="/notifications" className="btn btn-secondary">Send reminder</Link>
+            <Link href="/draw" className="btn btn-secondary">Lucky draw</Link>
           </>
         }
       />
 
       <div className="mb-5 space-y-2">
         {!wa.configured && (
-          <Notice tone="amber" title="WhatsApp Cloud API not connected">
-            Messages can still be shared manually with prefilled WhatsApp links. Add the API credentials to send automatically (see README → WhatsApp setup).
+          <Notice tone="amber" title="WhatsApp not connected for this committee">
+            Messages can still be shared manually with prefilled WhatsApp links. An owner can connect a WhatsApp number in <Link href="/settings" className="font-semibold underline">Settings</Link>.
           </Notice>
         )}
         {missingPhones > 0 && (

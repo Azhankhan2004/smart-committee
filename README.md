@@ -10,25 +10,28 @@ Built with **Next.js 16 + TypeScript + Tailwind CSS**, **Supabase (PostgreSQL + 
 
 ## What it does
 
+A **multi-committee platform**: anyone can register, create their own committee, and manage it privately.
+
 | Area | Features |
 |---|---|
-| **Dashboard** | Committee amount, total collected, current month, current & upcoming winner, paid / pending count, completion %, remaining months, next deadline, collection chart, “who has paid” table, setup warnings |
-| **Members** | Alphabetical slots (A–Q by default), optional real name, WhatsApp number with country code (validated), joining month, winner month, payment history, total contributed, deactivate / reactivate with reason |
-| **Winners** | 17-month schedule, admin-defined order (change any unannounced month, or reset to A→Z), announce with typed confirmation, date/time stored, duplicate announcements blocked by the database, owner-only corrections with a reason in the audit log, announcement card |
-| **Payments** | Per month per member: required amount, amount paid, status (Pending / Paid / Partially paid / Overdue), date, method, transaction reference, admin remarks. Payments are only recorded when an admin confirms them. |
-| **WhatsApp** | 6 message types (A–F), preview before sending, send to all / unpaid / one member, editable templates, Meta-approved template support, sent / failed logs, retry, delivery receipts (webhook). **Manual mode** with prefilled `wa.me` links if API credentials are missing. |
-| **Scheduler** | Daily server-side job (Vercel Cron), configurable due day, reminder N days before, on due date, overdue every N days, winner announcement day, monthly update day. Duplicate-proof and catches up missed days. |
-| **Posters** | 1080×1080 PNG posters (reminder, winner, payment confirmation, monthly update), download or share directly to WhatsApp from a phone |
-| **Reports** | Monthly collections, member payment history, pending payments, winner history, notification history, overall progress — each exportable as **CSV** and **PDF** |
-| **Activity log** | Permanent, read-only log of every change (who, when, old → new values, reason) |
-| **UI** | Mobile-first, sidebar on desktop, bottom navigation on phones, light & dark mode |
+| **Accounts & committees** | Sign-up / sign-in, password reset, create several committees, switch between them, add co-admins by email (owner / admin roles). Each committee's data is completely separate (enforced by the database). |
+| **Dashboard** | Committee amount, total collected, current & upcoming winner, paid / pending count, completion %, remaining months, next deadline, chart, "who has paid" |
+| **Members** | Alphabetical slots (A–Q by default), optional real name, WhatsApp number, joining month, winner month, payment history, deactivate / reactivate |
+| **Winners** | Fixed order (editable) **or** monthly lucky draw. Announce with typed confirmation; duplicates blocked; owner-only corrections with reason |
+| **Lucky draw** | Dedicated page with 4 shuffling cards, **automatic** or **manual** (stop when you like) mode. The winner is chosen on the server with secure randomness, saved, announced and messaged automatically. Full draw history. Can also run by itself on the announcement day. |
+| **Winner banners** | A unique design for every letter A–Q (own colours + pattern). A personalised 1080×1080 PNG banner is generated automatically for each winner, shown in the app and on the public page, downloadable, and attached to the winner's WhatsApp message. |
+| **Public page** | `/p/<committee>` — letters A–Q only, winners by letter, schedule, draw history. No names, numbers or individual payments. Can be switched off. |
+| **Payments** | Per member per month: status (Pending / Paid / Partially paid / Overdue), date, method, reference, remarks |
+| **WhatsApp** | Each committee connects its **own** WhatsApp Business number in Settings (e.g. a family member's number). 7 message types incl. the personal winner message with banner. Preview, bulk send, logs, retry, delivery receipts, manual-link fallback. |
+| **Scheduler** | Daily job for every committee: reminders, overdue alerts, monthly updates, automatic winner / lucky draw. Duplicate-proof. |
+| **Posters, reports, activity log** | PNG posters, CSV/PDF reports, permanent audit log per committee |
 
 ### What needs external credentials
 
 | Feature | Needs | Without it |
 |---|---|---|
 | Everything except WhatsApp API sending | Supabase project (free) | App shows a setup page |
-| Automatic WhatsApp sending, bulk send, retries | WhatsApp Cloud API token + phone number ID | Manual sharing via prefilled WhatsApp links (logged as “Opened in WhatsApp”, never as “delivered”) |
+| Automatic WhatsApp sending, bulk send, retries, winner messages | A WhatsApp Business number connected in **Settings → WhatsApp** (phone number ID + token) | Manual sharing via prefilled WhatsApp links (logged as “Opened in WhatsApp”, never as “delivered”) |
 | Delivery / read receipts | WhatsApp webhook verify token + app secret | Messages show as “Sent” (accepted by Meta) |
 | Daily automatic reminders | `CRON_SECRET` + service role key + hosting with cron (Vercel) | Use **Settings → Run now** manually |
 
@@ -43,6 +46,7 @@ You need **Node.js 20.9+** and a free **Supabase** account.
 ### 1. Create the Supabase project
 1. Go to [supabase.com](https://supabase.com) → **New project**. Choose a region close to Pakistan (e.g. Mumbai / Singapore). Save the database password.
 2. Open **SQL Editor** → **New query**, paste the whole of `supabase/setup_all.sql`, then click **Run**.
+   **Already running the older single-committee version?** Run only `supabase/migrations/20261117000004_multi_committee.sql` instead — it upgrades in place and keeps all data (see docs/UPGRADE_V2.md).
    This creates all tables, security rules, functions, the 17 slots (A–Q), the 6 message templates and the 17-month schedule starting **this month**.
    - Committee started in a different month? Change it later in **Settings → Start month** (allowed until the first payment is recorded).
    - Prefer separate files? Run `supabase/migrations/*.sql` in order, then `supabase/seed.sql`.

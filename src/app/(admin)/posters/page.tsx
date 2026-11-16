@@ -11,8 +11,8 @@ const TYPES: PosterType[] = ["reminder", "winner", "confirmation", "update"];
 
 export default async function PostersPage({ searchParams }: { searchParams: Promise<{ type?: string; month?: string }> }) {
   const sp = await searchParams;
-  const { db } = await requireAdmin();
-  const [settings, schedules, members, payments] = await Promise.all([getSettings(db), getSchedules(db), getMembers(db), getPayments(db)]);
+  const { db, committeeId } = await requireAdmin();
+  const [settings, schedules, members, payments] = await Promise.all([getSettings(db, committeeId), getSchedules(db, committeeId), getMembers(db, committeeId), getPayments(db, committeeId)]);
   if (!settings || schedules.length === 0) return <EmptyState title="No schedule yet" />;
   const pos = committeePosition(schedules, todayInTimeZone(settings.timezone));
   const month = schedules.find((s) => s.month_number === Number(sp.month)) ?? pos.current ?? pos.next ?? schedules[0];

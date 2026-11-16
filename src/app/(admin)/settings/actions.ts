@@ -5,9 +5,9 @@ import { friendlyError } from "@/lib/format";
 import { normalizePhone } from "@/lib/phone";
 import { runScheduler, type SchedulerReport } from "@/lib/scheduler-engine";
 import type { ActionResult, Settings } from "@/lib/types";
-import { sendWhatsApp } from "@/lib/whatsapp";
+import { getWhatsAppConfig, sendWhatsApp } from "@/lib/whatsapp";
 
-export type SettingsInput = Omit<Settings, "id" | "updated_at" | "currency"> & { currency: string };
+export type SettingsInput = Omit<Settings, "committee_id" | "updated_at">;
 
 const INT_RANGES: Partial<Record<keyof SettingsInput, [number, number]>> = {
   total_members: [2, 60],
@@ -19,15 +19,18 @@ const INT_RANGES: Partial<Record<keyof SettingsInput, [number, number]>> = {
   winner_announcement_day: [1, 28],
 };
 
+const refresh = () => revalidatePath("/", "layout");
+
 export async function saveSettings(input: SettingsInput): Promise<ActionResult<Record<string, number>>> {
   try {
-    const { db } = await adminForAction();
+    const { db, committeeId } = await adminForAction();
     for (const [k, [min, max]] of Object.entries(INT_RANGES) as [keyof SettingsInput, [number, number]][]) {
       const v = Number(input[k]);
       if (!Number.isInteger(v) || v < min || v > max) return { ok: false, error: `“${k.replaceAll("_", " ")}” must be a whole number from ${min} to ${max}.` };
     }
     if (!(input.monthly_contribution > 0) || !(input.payout_amount > 0)) return { ok: false, error: "Amounts must be greater than zero." };
     if (!/^\d{4}-\d{2}-01$/.test(input.start_month)) return { ok: false, error: "Please choose a valid start month." };
+    if (!["sequence", "lucky_draw"].includes(input.winner_selection)) return { ok: false, error: "Choose how winners are picked." };
     try {
       new Intl.DateTimeFormat("en", { timeZone: input.timezone });
     } catch {
@@ -53,12 +56,13 @@ export async function saveSettings(input: SettingsInput): Promise<ActionResult<R
         winner_announcement_day: input.winner_announcement_day,
         auto_send_enabled: input.auto_send_enabled,
         auto_announce_winner: input.auto_announce_winner,
+        winner_selection: input.winner_selection,
       })
-      .eq("id", 1);
+      .eq("committee_id", committeeId);
     if (error) return { ok: false, error: friendlyError(error) };
 
-    const { data, error: genError } = await db.rpc("generate_schedule");
-    revalidatePath("/", "layout");
+    const { data, error: genError } = await db.rpc("generate_schedule", { p_committee_id: committeeId });
+    refresh();
     if (genError) return { ok: false, error: `Settings saved, but the schedule could not be updated: ${friendlyError(genError)}` };
     const r = data as Record<string, number>;
     return {
@@ -71,11 +75,102 @@ export async function saveSettings(input: SettingsInput): Promise<ActionResult<R
   }
 }
 
+export async function savePublicPage(input: { slug: string; public_enabled: boolean }): Promise<ActionResult> {
+  try {
+    const { db, committeeId, role } = await adminForAction();
+    if (role !== "owner") return { ok: false, error: "Only an owner can change the public page." };
+    const slug = input.slug.trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9-]{1,46}[a-z0-9]$/.test(slug)) {
+      return { ok: false, error: "The web address may only use lowercase letters, numbers and dashes (3–48 characters)." };
+    }
+    const { error } = await db.from("committees").update({ slug, public_enabled: input.public_enabled }).eq("id", committeeId);
+    if (error) return { ok: false, error: error.code === "23505" ? "That web address is already taken." : friendlyError(error) };
+    refresh();
+    return { ok: true, message: "Public page settings saved." };
+  } catch (e) {
+    return { ok: false, error: friendlyError(e) };
+  }
+}
+
+export async function saveLogo(dataUrl: string | null): Promise<ActionResult> {
+  try {
+    const { db, committeeId, role } = await adminForAction();
+    if (role !== "owner") return { ok: false, error: "Only an owner can change the logo." };
+    if (dataUrl !== null && (!/^data:image\/(png|jpeg|webp);base64,/.test(dataUrl) || dataUrl.length > 400000)) {
+      return { ok: false, error: "Please use a PNG, JPG or WebP image (it is resized automatically)." };
+    }
+    const { error } = await db.from("committees").update({ logo_data: dataUrl }).eq("id", committeeId);
+    if (error) return { ok: false, error: friendlyError(error) };
+    refresh();
+    return { ok: true, message: dataUrl ? "Logo saved." : "Logo removed." };
+  } catch (e) {
+    return { ok: false, error: friendlyError(e) };
+  }
+}
+
+export async function addAdmin(email: string, role: "owner" | "admin"): Promise<ActionResult> {
+  try {
+    const { db, committeeId } = await adminForAction();
+    const { error } = await db.rpc("add_committee_admin", { p_committee_id: committeeId, p_email: email, p_role: role });
+    if (error) return { ok: false, error: friendlyError(error) };
+    refresh();
+    return { ok: true, message: `${email} can now manage this committee.` };
+  } catch (e) {
+    return { ok: false, error: friendlyError(e) };
+  }
+}
+
+export async function removeAdmin(userId: string): Promise<ActionResult> {
+  try {
+    const { db, committeeId } = await adminForAction();
+    const { error } = await db.rpc("remove_committee_admin", { p_committee_id: committeeId, p_user_id: userId });
+    if (error) return { ok: false, error: friendlyError(error) };
+    refresh();
+    return { ok: true, message: "Admin removed." };
+  } catch (e) {
+    return { ok: false, error: friendlyError(e) };
+  }
+}
+
+export async function saveWhatsApp(input: { phoneNumberId: string; accessToken: string; businessAccountId: string; displayPhone: string }): Promise<ActionResult> {
+  try {
+    const { db, committeeId, role } = await adminForAction();
+    if (role !== "owner") return { ok: false, error: "Only an owner can change WhatsApp settings." };
+    if (!/^\d{5,30}$/.test(input.phoneNumberId.trim())) return { ok: false, error: "Phone number ID should be digits only (from Meta → WhatsApp → API Setup)." };
+    const existing = await getWhatsAppConfig(committeeId);
+    if (!existing.configured && input.accessToken.trim().length < 20) return { ok: false, error: "Please paste the access token." };
+    const { error } = await db.rpc("set_whatsapp_credentials", {
+      p_committee_id: committeeId,
+      p_phone_number_id: input.phoneNumberId.trim(),
+      p_access_token: input.accessToken.trim(),
+      p_business_account_id: input.businessAccountId.trim() || null,
+      p_display_phone: input.displayPhone.trim() || null,
+    });
+    if (error) return { ok: false, error: friendlyError(error) };
+    refresh();
+    return { ok: true, message: "WhatsApp connected. Send a test message to check it works." };
+  } catch (e) {
+    return { ok: false, error: friendlyError(e) };
+  }
+}
+
+export async function clearWhatsApp(): Promise<ActionResult> {
+  try {
+    const { db, committeeId } = await adminForAction();
+    const { error } = await db.rpc("clear_whatsapp_credentials", { p_committee_id: committeeId });
+    if (error) return { ok: false, error: friendlyError(error) };
+    refresh();
+    return { ok: true, message: "WhatsApp disconnected for this committee." };
+  } catch (e) {
+    return { ok: false, error: friendlyError(e) };
+  }
+}
+
 export async function runSchedulerNow(dryRun: boolean): Promise<ActionResult<SchedulerReport>> {
   try {
-    const { db } = await adminForAction();
-    const report = await runScheduler(db, { dryRun, ignoreAutoSendSwitch: true });
-    if (!dryRun) revalidatePath("/", "layout");
+    const { db, committeeId, committee } = await adminForAction();
+    const report = await runScheduler(db, committeeId, { dryRun, ignoreAutoSendSwitch: true, slug: committee.slug });
+    if (!dryRun) refresh();
     return { ok: true, data: report };
   } catch (e) {
     return { ok: false, error: friendlyError(e) };
@@ -85,10 +180,11 @@ export async function runSchedulerNow(dryRun: boolean): Promise<ActionResult<Sch
 /** Sends Meta's default "hello_world" template to check the credentials work. */
 export async function sendTestMessage(phone: string): Promise<ActionResult> {
   try {
-    await adminForAction();
+    const { committeeId } = await adminForAction();
     const p = normalizePhone(phone);
     if (!p.ok) return { ok: false, error: p.error };
-    const res = await sendWhatsApp({ kind: "template", to: p.value, templateName: "hello_world", languageCode: "en_US", bodyParams: [] });
+    const cfg = await getWhatsAppConfig(committeeId);
+    const res = await sendWhatsApp(cfg, { kind: "template", to: p.value, templateName: "hello_world", languageCode: "en_US", bodyParams: [] });
     if (!res.ok) return { ok: false, error: res.error };
     return { ok: true, message: `Test message accepted by WhatsApp (id …${res.messageId.slice(-6)}).` };
   } catch (e) {

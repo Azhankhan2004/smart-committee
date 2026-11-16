@@ -5,6 +5,7 @@ export const TEMPLATE_KEYS = [
   "payment_overdue",
   "payment_received",
   "new_month_update",
+  "winner_personal",
 ] as const;
 export type TemplateKey = (typeof TEMPLATE_KEYS)[number];
 
@@ -13,7 +14,7 @@ export type EffectiveStatus = PaymentStatus | "overdue";
 export type Phase = "past" | "current" | "upcoming";
 
 export type Settings = {
-  id: number;
+  committee_id: string;
   committee_name: string;
   currency: string;
   total_members: number;
@@ -30,7 +31,20 @@ export type Settings = {
   winner_announcement_day: number;
   auto_send_enabled: boolean;
   auto_announce_winner: boolean;
+  winner_selection: "sequence" | "lucky_draw";
   updated_at: string;
+};
+
+export type Committee = { id: string; slug: string; public_enabled: boolean; name: string; logo: string | null; role: "owner" | "admin" };
+
+export type DrawRow = {
+  id: string;
+  schedule_id: string;
+  mode: "manual" | "auto" | "scheduler";
+  candidate_slots: string[];
+  winner_slot: string;
+  created_by_email: string | null;
+  created_at: string;
 };
 
 export type Member = {
@@ -128,6 +142,7 @@ export type Template = {
   meta_template_name: string | null;
   meta_language_code: string;
   meta_body_params: string[];
+  meta_header_image: boolean;
   is_active: boolean;
   updated_at: string;
 };

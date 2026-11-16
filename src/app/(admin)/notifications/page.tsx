@@ -4,7 +4,7 @@ import { committeePosition } from "@/lib/committee";
 import { getMembers, getSchedules, getSettings } from "@/lib/data";
 import { todayInTimeZone } from "@/lib/dates";
 import { TEMPLATE_KEYS, type TemplateKey } from "@/lib/types";
-import { whatsappStatus } from "@/lib/whatsapp";
+import { getWhatsAppConfig, publicStatus } from "@/lib/whatsapp";
 import { SendClient } from "./send-client";
 import { NotificationTabs } from "./tabs";
 
@@ -12,8 +12,8 @@ export const metadata = { title: "Notifications" };
 
 export default async function NotificationsPage({ searchParams }: { searchParams: Promise<{ template?: string; month?: string }> }) {
   const sp = await searchParams;
-  const { db } = await requireAdmin();
-  const [settings, schedules, members] = await Promise.all([getSettings(db), getSchedules(db), getMembers(db)]);
+  const { db, committeeId } = await requireAdmin();
+  const [settings, schedules, members] = await Promise.all([getSettings(db, committeeId), getSchedules(db, committeeId), getMembers(db, committeeId)]);
   const today = todayInTimeZone(settings?.timezone ?? "Asia/Karachi");
   const pos = committeePosition(schedules, today);
   const month = schedules.find((s) => s.month_number === Number(sp.month)) ?? pos.current ?? pos.next ?? schedules[0];
@@ -28,7 +28,7 @@ export default async function NotificationsPage({ searchParams }: { searchParams
         members={members.filter((m) => m.is_active).map((m) => ({ id: m.id, slot_code: m.slot_code, full_name: m.full_name }))}
         initialScheduleId={month?.id ?? ""}
         initialTemplate={template}
-        wa={whatsappStatus()}
+        wa={publicStatus(await getWhatsAppConfig(committeeId))}
       />
     </>
   );

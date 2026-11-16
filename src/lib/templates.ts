@@ -9,6 +9,7 @@ export const TEMPLATE_LABELS: Record<TemplateKey, { letter: string; name: string
   payment_overdue: { letter: "D", name: "Payment Overdue Alert", perMember: "unpaid" },
   payment_received: { letter: "E", name: "Payment Received Confirmation", perMember: "one" },
   new_month_update: { letter: "F", name: "New Month Committee Update", perMember: "all" },
+  winner_personal: { letter: "G", name: "Personal Winner Message", perMember: "one" },
 };
 
 export const PLACEHOLDERS = [
@@ -107,6 +108,7 @@ export function dedupeKeyFor(
     case "monthly_reminder":
     case "winner_announcement":
     case "new_month_update":
+    case "winner_personal":
       return `${key}:${p.scheduleId}:${p.memberId}`;
     case "payment_due":
       return `${key}:${p.scheduleId}:${p.memberId}:${p.variant ?? `manual-${p.today}`}`;

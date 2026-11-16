@@ -33,7 +33,7 @@ export function methodLabel(value: string | null | undefined): string {
 export function friendlyError(err: unknown): string {
   const msg =
     typeof err === "object" && err && "message" in err ? String((err as { message: unknown }).message) : String(err);
-  if (msg.includes("members_slot_code_key")) return "That slot code is already used by another member.";
+  if (msg.includes("members_slot_code_key") || msg.includes("members_committee_slot_key")) return "That slot code is already used by another member.";
   if (msg.includes("members_phone_e164_check")) return "The WhatsApp number is not in a valid international format.";
   if (msg.includes("members_slot_code_check")) return "Slot code must be letters (A–Z), optionally followed by a number.";
   if (msg.includes("winners_one_per_month_idx")) return "A winner has already been announced for this month.";

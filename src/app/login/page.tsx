@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Suspense } from "react";
 import { LoginForm } from "./login-form";
 
@@ -20,18 +21,22 @@ export default function LoginPage() {
             Track every contribution, announce winners fairly and send WhatsApp reminders automatically.
           </p>
         </div>
-        <p className="relative text-sm text-brand-100/70">Admin access only</p>
+        <p className="relative text-sm text-brand-100/70">Run your own committee — free</p>
       </div>
       <div className="flex items-center justify-center px-5 py-12">
         <div className="w-full max-w-sm">
           <div className="mb-8 lg:hidden">
             <div className="grid size-12 place-items-center rounded-2xl bg-gradient-to-br from-brand-500 to-brand-800 font-black text-white">SC</div>
           </div>
-          <h2 className="text-2xl font-bold">Admin sign in</h2>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Use the email and password your committee owner set up for you.</p>
+          <h2 className="text-2xl font-bold">Sign in</h2>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Manage your committees, payments and lucky draws.</p>
           <Suspense>
             <LoginForm />
           </Suspense>
+          <p className="mt-6 text-center text-sm text-slate-600 dark:text-slate-300">
+            New here?{" "}
+            <Link href="/register" className="font-semibold text-brand-700 hover:underline dark:text-brand-300">Create an account</Link>
+          </p>
         </div>
       </div>
     </div>

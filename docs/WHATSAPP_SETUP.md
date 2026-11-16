@@ -10,8 +10,8 @@ Connect the official Cloud API when you want the app to send messages by itself,
 
 ## How it works in this app
 
-- Sending happens **only on the server** (`src/lib/whatsapp.ts`), with `POST https://graph.facebook.com/<version>/<PHONE_NUMBER_ID>/messages`.
-- Your access token is read from `WHATSAPP_ACCESS_TOKEN` on the server. It is never sent to the browser.
+- Every committee connects **its own** sending number in the app: **Settings → WhatsApp → Connect a WhatsApp number** (owner only). Paste the *Phone number ID* and the *access token*.
+- The token is stored in a database table that the browser can never read; only the server uses it (`src/lib/whatsapp.ts`, `POST https://graph.facebook.com/<version>/<PHONE_NUMBER_ID>/messages`).
 - A message is marked **Sent** only when Meta returns a message ID. Errors are saved with Meta’s exact error text.
 - WhatsApp only lets a business **start** a conversation with a **Meta-approved message template**.
   Each of the 6 app templates is linked to a Meta template name (Notifications → Templates).
@@ -30,14 +30,7 @@ Connect the official Cloud API when you want the app to send messages by itself,
    - a **temporary access token** (valid ~24 hours) → `WHATSAPP_ACCESS_TOKEN` for a first test.
 4. Under **To**, add your own WhatsApp number and confirm it with the code. With the test number you can only message numbers you add here (Meta limits this list to a few numbers).
 
-Put the values in `.env.local` (or Vercel environment variables) and restart / redeploy:
-
-```env
-WHATSAPP_ACCESS_TOKEN=EAAG...
-WHATSAPP_PHONE_NUMBER_ID=1234567890
-WHATSAPP_BUSINESS_ACCOUNT_ID=9876543210
-WHATSAPP_API_VERSION=v25.0
-```
+Paste the values into the app: **Settings → WhatsApp → Connect a WhatsApp number**.
 
 **Test it:** Settings → WhatsApp Cloud API → enter your number → **Test**. This sends Meta’s built-in `hello_world` template.
 
@@ -49,7 +42,7 @@ The temporary token expires after about a day. For the real app:
 2. **Assign assets**: add your app (full control) and your WhatsApp account (full control).
 3. **Generate new token** → choose your app → expiry *Never* → permissions
    `whatsapp_business_messaging` and `whatsapp_business_management`.
-4. Copy it into `WHATSAPP_ACCESS_TOKEN` (server only) and redeploy. Treat it like a password.
+4. Paste it into **Settings → WhatsApp** (leave the token field empty later to keep it). Treat it like a password.
 
 ## Step 3 — Create and approve the 6 message templates
 
@@ -68,6 +61,7 @@ Open **WhatsApp Manager → Message templates → Create template** for each one
 | D. Payment Overdue Alert | `committee_payment_overdue` |
 | E. Payment Received Confirmation | `committee_payment_received` |
 | F. New Month Committee Update | `committee_new_month_update` |
+| G. Personal Winner Message | `committee_winner_personal` — add an **Image header** when creating it; the app attaches the winner's banner automatically |
 
 Rules that avoid rejections:
 - The message must not start or end with a variable (the defaults start with “Assalam-o-Alaikum” and end with plain text).
@@ -86,6 +80,15 @@ This lets the app show **Delivered / Read / Failed** instead of only **Sent**.
 4. Under **Webhook fields**, subscribe to **messages**.
 
 The endpoint checks Meta’s `X-Hub-Signature-256` signature, so nobody else can fake delivery updates.
+
+## Using a family member's existing WhatsApp number (e.g. an aunt's)
+
+Meta's **Coexistence** feature lets a number that is already used in the **WhatsApp Business app** also send through the Cloud API, so she can keep chatting from her phone. Requirements (Meta's rules):
+- The number must be on the **WhatsApp Business app** (not the normal personal WhatsApp app). Switching from WhatsApp to WhatsApp Business on the same phone keeps the chats.
+- App version 2.24.17 or newer, and the app should be opened at least every 14 days.
+- Onboarding is done through a Meta **Solution Partner / Tech Provider** (QR-code flow). After onboarding you get a phone number ID and token — paste them into Settings → WhatsApp.
+
+Alternative: register a separate, dedicated number for the committee directly in the Meta app (Step 5). That number then cannot be used in the WhatsApp app at the same time.
 
 ## Step 5 — Going live with your own number
 

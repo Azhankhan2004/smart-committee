@@ -2,7 +2,7 @@ import "server-only";
 import type { AnyDB } from "./data";
 import { buildContext, buildMetaParams, renderTemplate, type MessageContext } from "./templates";
 import type { NotificationLog, PaymentRow, ScheduleRow, Settings, Template } from "./types";
-import { sendWhatsApp, whatsappConfig, type WhatsAppPayload } from "./whatsapp";
+import { sendWhatsApp, type WhatsAppConfig, type WhatsAppPayload } from "./whatsapp";
 
 export const MAX_ATTEMPTS = 3;
 
@@ -15,7 +15,7 @@ export type DispatchOutcome =
   | { status: "duplicate"; logId?: string }
   | { status: "not_configured" };
 
-export function payloadFor(template: Template, phone: string, ctx: MessageContext, body: string): WhatsAppPayload {
+export function payloadFor(template: Template, phone: string, ctx: MessageContext, body: string, headerImageUrl?: string | null): WhatsAppPayload {
   if (template.meta_template_name) {
     return {
       kind: "template",
@@ -23,6 +23,7 @@ export function payloadFor(template: Template, phone: string, ctx: MessageContex
       templateName: template.meta_template_name,
       languageCode: template.meta_language_code || "en",
       bodyParams: buildMetaParams(template.meta_body_params ?? [], ctx),
+      headerImageUrl: template.meta_header_image ? headerImageUrl ?? null : null,
     };
   }
   // Free-form text only works inside WhatsApp's 24-hour customer-service window.
@@ -49,8 +50,8 @@ export function contextFor(args: {
   });
 }
 
-async function sendAndRecord(db: AnyDB, logId: string, payload: WhatsAppPayload, previousAttempts: number): Promise<DispatchOutcome> {
-  const result = await sendWhatsApp(payload);
+async function sendAndRecord(db: AnyDB, cfg: WhatsAppConfig, logId: string, payload: WhatsAppPayload, previousAttempts: number): Promise<DispatchOutcome> {
+  const result = await sendWhatsApp(cfg, payload);
   const now = new Date().toISOString();
   const update = result.ok
     ? { status: "sent", provider_message_id: result.messageId, error_message: null, sent_at: now, attempts: previousAttempts + 1 }
@@ -67,6 +68,8 @@ async function sendAndRecord(db: AnyDB, logId: string, payload: WhatsAppPayload,
 export async function dispatchNotification(
   db: AnyDB,
   input: {
+    cfg: WhatsAppConfig;
+    committeeId: string;
     template: Template;
     member: Recipient;
     scheduleId: string | null;
@@ -74,13 +77,15 @@ export async function dispatchNotification(
     dedupeKey: string | null;
     triggeredBy: "admin" | "scheduler";
     actorId?: string | null;
+    headerImageUrl?: string | null;
   },
 ): Promise<DispatchOutcome> {
-  const { template, member, scheduleId, context, dedupeKey, triggeredBy, actorId } = input;
+  const { cfg, committeeId, template, member, scheduleId, context, dedupeKey, triggeredBy, actorId } = input;
   const body = renderTemplate(template.body, context);
 
   if (!member.phone_e164) {
     await db.from("notification_logs").insert({
+      committee_id: committeeId,
       template_key: template.key,
       member_id: member.id,
       schedule_id: scheduleId,
@@ -94,12 +99,13 @@ export async function dispatchNotification(
     return { status: "skipped", error: `Slot ${member.slot_code} has no WhatsApp number.` };
   }
 
-  if (!whatsappConfig().configured) return { status: "not_configured" };
+  if (!cfg.configured) return { status: "not_configured" };
 
-  const payload = payloadFor(template, member.phone_e164, context, body);
+  const payload = payloadFor(template, member.phone_e164, context, body, input.headerImageUrl);
   const { data: inserted, error } = await db
     .from("notification_logs")
     .insert({
+      committee_id: committeeId,
       template_key: template.key,
       member_id: member.id,
       schedule_id: scheduleId,
@@ -124,27 +130,32 @@ export async function dispatchNotification(
         .eq("dedupe_key", dedupeKey)
         .maybeSingle();
       if (existing && existing.status === "failed" && existing.attempts < MAX_ATTEMPTS) {
-        return sendAndRecord(db, existing.id, (existing.request_payload as WhatsAppPayload) ?? payload, existing.attempts);
+        return sendAndRecord(db, cfg, existing.id, (existing.request_payload as WhatsAppPayload) ?? payload, existing.attempts);
       }
       return { status: "duplicate", logId: existing?.id };
     }
     return { status: "skipped", error: `Could not create the log entry: ${error.message}` };
   }
 
-  return sendAndRecord(db, inserted.id, payload, 0);
+  return sendAndRecord(db, cfg, inserted.id, payload, 0);
 }
 
 /** Re-sends a failed API message using the exact payload stored in its log. */
-export async function retryNotification(db: AnyDB, logId: string): Promise<DispatchOutcome> {
-  const { data: log, error } = await db.from("notification_logs").select("*").eq("id", logId).single<NotificationLog>();
+export async function retryNotification(db: AnyDB, cfg: WhatsAppConfig, logId: string, committeeId: string): Promise<DispatchOutcome> {
+  const { data: log, error } = await db
+    .from("notification_logs")
+    .select("*")
+    .eq("id", logId)
+    .eq("committee_id", committeeId)
+    .single<NotificationLog>();
   if (error || !log) return { status: "skipped", error: "Log entry not found." };
   if (log.channel !== "whatsapp_api" || log.status !== "failed") {
     return { status: "skipped", error: "Only failed WhatsApp API messages can be retried." };
   }
   if (!log.request_payload) return { status: "skipped", error: "This log has no stored payload to retry." };
-  if (!whatsappConfig().configured) return { status: "not_configured" };
+  if (!cfg.configured) return { status: "not_configured" };
   await db.from("notification_logs").update({ triggered_by: "retry" }).eq("id", logId);
-  return sendAndRecord(db, logId, log.request_payload as WhatsAppPayload, log.attempts);
+  return sendAndRecord(db, cfg, logId, log.request_payload as WhatsAppPayload, log.attempts);
 }
 
 export type SendSummary = { sent: number; failed: number; skipped: number; duplicate: number; errors: string[] };

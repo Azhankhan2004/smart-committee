@@ -1,6 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { MemberSummary, PaymentRow, ScheduleRow, Settings, Template } from "./types";
+import type { DrawRow, MemberSummary, PaymentRow, ScheduleRow, Settings, Template } from "./types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AnyDB = SupabaseClient<any, any, any>;
@@ -11,15 +11,15 @@ function fail(what: string, error: { message: string } | null): never {
   throw new Error(`Could not load ${what}: ${error?.message ?? "unknown error"}`);
 }
 
-export async function getSettings(db: AnyDB): Promise<Settings | null> {
-  const { data, error } = await db.from("committee_settings").select("*").eq("id", 1).maybeSingle();
+export async function getSettings(db: AnyDB, committeeId: string): Promise<Settings | null> {
+  const { data, error } = await db.from("committee_settings").select("*").eq("committee_id", committeeId).maybeSingle();
   if (error) fail("settings", error);
   if (!data) return null;
   return { ...data, monthly_contribution: n(data.monthly_contribution), payout_amount: n(data.payout_amount) } as Settings;
 }
 
-export async function getSchedules(db: AnyDB): Promise<ScheduleRow[]> {
-  const { data, error } = await db.from("v_schedule").select("*").order("month_number");
+export async function getSchedules(db: AnyDB, committeeId: string): Promise<ScheduleRow[]> {
+  const { data, error } = await db.from("v_schedule").select("*").eq("committee_id", committeeId).order("month_number");
   if (error) fail("schedule", error);
   return (data ?? []).map((r) => ({
     ...r,
@@ -34,8 +34,13 @@ export async function getSchedules(db: AnyDB): Promise<ScheduleRow[]> {
   })) as ScheduleRow[];
 }
 
-export async function getMembers(db: AnyDB): Promise<MemberSummary[]> {
-  const { data, error } = await db.from("v_member_summary").select("*").order("display_order").order("slot_code");
+export async function getMembers(db: AnyDB, committeeId: string): Promise<MemberSummary[]> {
+  const { data, error } = await db
+    .from("v_member_summary")
+    .select("*")
+    .eq("committee_id", committeeId)
+    .order("display_order")
+    .order("slot_code");
   if (error) fail("members", error);
   return (data ?? []).map((r) => ({
     ...r,
@@ -44,8 +49,12 @@ export async function getMembers(db: AnyDB): Promise<MemberSummary[]> {
   })) as MemberSummary[];
 }
 
-export async function getPayments(db: AnyDB, filter: { scheduleId?: string; memberId?: string } = {}): Promise<PaymentRow[]> {
-  let q = db.from("v_payments").select("*");
+export async function getPayments(
+  db: AnyDB,
+  committeeId: string,
+  filter: { scheduleId?: string; memberId?: string } = {},
+): Promise<PaymentRow[]> {
+  let q = db.from("v_payments").select("*").eq("committee_id", committeeId);
   if (filter.scheduleId) q = q.eq("schedule_id", filter.scheduleId);
   if (filter.memberId) q = q.eq("member_id", filter.memberId);
   const { data, error } = await q.order("month_number").order("slot_code").limit(5000);
@@ -59,8 +68,18 @@ export async function getPayments(db: AnyDB, filter: { scheduleId?: string; memb
   })) as PaymentRow[];
 }
 
-export async function getTemplates(db: AnyDB): Promise<Template[]> {
-  const { data, error } = await db.from("notification_templates").select("*").order("key");
+export async function getTemplates(db: AnyDB, committeeId: string): Promise<Template[]> {
+  const { data, error } = await db.from("notification_templates").select("*").eq("committee_id", committeeId).order("key");
   if (error) fail("templates", error);
   return (data ?? []) as Template[];
+}
+
+export async function getDraws(db: AnyDB, committeeId: string): Promise<DrawRow[]> {
+  const { data, error } = await db
+    .from("draws")
+    .select("id, schedule_id, mode, candidate_slots, winner_slot, created_by_email, created_at")
+    .eq("committee_id", committeeId)
+    .order("created_at", { ascending: false });
+  if (error) fail("draws", error);
+  return (data ?? []) as DrawRow[];
 }

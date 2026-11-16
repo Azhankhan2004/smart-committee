@@ -7,14 +7,14 @@ import { ReportsClient, type ReportData } from "./reports-client";
 export const metadata = { title: "Reports" };
 
 export default async function ReportsPage() {
-  const { db } = await requireAdmin();
+  const { db, committeeId } = await requireAdmin();
   const [settings, schedules, members, payments, winnersRes, logsRes] = await Promise.all([
-    getSettings(db),
-    getSchedules(db),
-    getMembers(db),
-    getPayments(db),
-    db.from("winners").select("*, members(slot_code, full_name), monthly_schedules(month_number, period_month)").order("announced_at"),
-    db.from("notification_logs").select("template_key, status, channel, triggered_by, created_at, sent_at, error_message, members(slot_code), monthly_schedules(month_number)").order("created_at", { ascending: false }).limit(2000),
+    getSettings(db, committeeId),
+    getSchedules(db, committeeId),
+    getMembers(db, committeeId),
+    getPayments(db, committeeId),
+    db.from("winners").select("*, members(slot_code, full_name), monthly_schedules(month_number, period_month)").eq("committee_id", committeeId).order("announced_at"),
+    db.from("notification_logs").select("template_key, status, channel, triggered_by, created_at, sent_at, error_message, members(slot_code), monthly_schedules(month_number)").eq("committee_id", committeeId).order("created_at", { ascending: false }).limit(2000),
   ]);
   const data: ReportData = {
     committeeName: settings?.committee_name ?? "Committee",

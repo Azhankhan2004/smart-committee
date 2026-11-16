@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { createServiceClient, serviceRoleConfigured } from "@/lib/supabase/admin";
-import { runScheduler } from "@/lib/scheduler-engine";
+import { runAllCommittees } from "@/lib/scheduler-engine";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
   }
   const dryRun = req.nextUrl.searchParams.get("dryRun") === "1";
   try {
-    const report = await runScheduler(createServiceClient(), { dryRun });
+    const report = await runAllCommittees(createServiceClient(), { dryRun });
     return NextResponse.json(report);
   } catch (err) {
     console.error("Scheduler failed", err);

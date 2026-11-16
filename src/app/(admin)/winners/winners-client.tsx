@@ -8,11 +8,31 @@ import { Badge, Card, Field, Notice } from "@/components/ui";
 import { formatDateTime, monthLabel } from "@/lib/dates";
 import { formatMoney } from "@/lib/format";
 import type { ScheduleRow } from "@/lib/types";
+import { reportWinnerMessage, WinnerShareModal } from "@/components/winner-message";
+import type { WinnerNotifyResult } from "@/lib/winner-notify";
 import { announceWinner, resetSequence, saveSequence, voidWinner } from "./actions";
 
 type M = { id: string; slot_code: string; full_name: string | null; has_won: boolean };
 
-export function WinnersClient({ schedules, members, isOwner, currency, timezone }: { schedules: ScheduleRow[]; members: M[]; isOwner: boolean; currency: string; timezone: string }) {
+export function WinnersClient({
+  schedules,
+  members,
+  isOwner,
+  currency,
+  timezone,
+  slug,
+  luckyDraw,
+}: {
+  schedules: ScheduleRow[];
+  members: M[];
+  isOwner: boolean;
+  currency: string;
+  timezone: string;
+  slug: string;
+  luckyDraw: boolean;
+}) {
+  const [shareResult, setShareResult] = useState<WinnerNotifyResult | null>(null);
+  const [shareMonth, setShareMonth] = useState<number | null>(null);
   const [pending, start] = useTransition();
   const [editMode, setEditMode] = useState(false);
   const [draft, setDraft] = useState<Record<string, string>>({});
@@ -59,13 +79,17 @@ export function WinnersClient({ schedules, members, isOwner, currency, timezone 
                 {current.is_announced ? (
                   <>
                     <Badge tone="green">Announced {formatDateTime(current.announced_at, timezone)}</Badge>
-                    <Link className="btn btn-secondary btn-sm" href={`/posters?type=winner&month=${current.month_number}`}><ImageIcon className="size-4" /> Announcement card</Link>
+                    <Link className="btn btn-secondary btn-sm" href={`/banners?month=${current.month_number}`}><ImageIcon className="size-4" /> Winner banner</Link>
                   </>
                 ) : (
-                  current.winner_slot && (
-                    <button className="btn btn-primary btn-sm" onClick={() => { setAnnouncing(current); setConfirm(""); setNotes(""); }}>
-                      <Megaphone className="size-4" /> Announce winner
-                    </button>
+                  luckyDraw ? (
+                    <Link className="btn btn-primary btn-sm" href="/draw"><Megaphone className="size-4" /> Hold the lucky draw</Link>
+                  ) : (
+                    current.winner_slot && (
+                      <button className="btn btn-primary btn-sm" onClick={() => { setAnnouncing(current); setConfirm(""); setNotes(""); }}>
+                        <Megaphone className="size-4" /> Announce winner
+                      </button>
+                    )
                   )
                 )}
               </div>
@@ -162,7 +186,7 @@ export function WinnersClient({ schedules, members, isOwner, currency, timezone 
                       <Badge tone="green"><Lock className="size-3" /> Announced {formatDateTime(s.announced_at, timezone)}</Badge>
                       {!editMode && (
                         <>
-                          <Link className="btn btn-ghost btn-sm" href={`/posters?type=winner&month=${s.month_number}`} title="Announcement card"><ImageIcon className="size-4" /></Link>
+                          <Link className="btn btn-ghost btn-sm" href={`/banners?month=${s.month_number}`} title="Winner banner"><ImageIcon className="size-4" /></Link>
                           <Link className="btn btn-ghost btn-sm" href={`/notifications?template=winner_announcement&month=${s.month_number}`} title="Send to members"><Send className="size-4" /></Link>
                           {isOwner && (
                             <button className="btn btn-ghost btn-sm text-rose-600" onClick={() => { setVoiding(s); setReason(""); }} title="Correct (void) announcement">
@@ -177,7 +201,10 @@ export function WinnersClient({ schedules, members, isOwner, currency, timezone 
                   ) : (
                     <>
                       <Badge tone="amber">Not announced</Badge>
-                      {canAnnounce && !editMode && (
+                      {luckyDraw && !editMode && (
+                        <Link className="btn btn-primary btn-sm" href={`/draw?month=${s.month_number}`}><Megaphone className="size-4" /> Lucky draw</Link>
+                      )}
+                      {canAnnounce && !editMode && !luckyDraw && (
                         <button className="btn btn-primary btn-sm" onClick={() => { setAnnouncing(s); setConfirm(""); setNotes(""); }}>
                           <Megaphone className="size-4" /> Announce
                         </button>
@@ -202,7 +229,23 @@ export function WinnersClient({ schedules, members, isOwner, currency, timezone 
             <button
               className="btn btn-primary"
               disabled={pending || confirm.trim().toUpperCase() !== announcing?.winner_slot}
-              onClick={() => announcing && run(() => announceWinner(announcing.id, confirm, notes), () => setAnnouncing(null))}
+              onClick={() =>
+                announcing &&
+                start(async () => {
+                  const res = await announceWinner(announcing.id, confirm, notes);
+                  if (!res.ok) {
+                    toast.error(res.error);
+                    return;
+                  }
+                  toast.success(res.message);
+                  const month = announcing.month_number;
+                  setAnnouncing(null);
+                  if (reportWinnerMessage(res.data)) {
+                    setShareMonth(month);
+                    setShareResult(res.data!);
+                  }
+                })
+              }
             >
               {pending && <Loader2 className="size-4 animate-spin" />} Confirm announcement
             </button>
@@ -248,6 +291,11 @@ export function WinnersClient({ schedules, members, isOwner, currency, timezone 
           <textarea id="vreason" className="input" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} />
         </Field>
       </Modal>
+      <WinnerShareModal
+        result={shareResult}
+        bannerSrc={shareMonth ? `/api/banner/${slug}/${shareMonth}` : null}
+        onClose={() => setShareResult(null)}
+      />
     </>
   );
 }
