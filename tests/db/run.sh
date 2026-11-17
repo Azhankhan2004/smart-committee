@@ -15,5 +15,7 @@ done
 $P -d committee_test -f supabase/migrations/20261117000004_multi_committee.sql > /dev/null
 $P -d committee_test -f supabase/migrations/20261117000005_fixes_v2_1.sql > /dev/null
 $P -d committee_test -f supabase/migrations/20261117000005_fixes_v2_1.sql > /dev/null  # re-runnable
+$P -d committee_test -f supabase/migrations/20261117000006_reserve_months.sql > /dev/null
+$P -d committee_test -f supabase/migrations/20261117000006_reserve_months.sql > /dev/null  # re-runnable
 echo "Upgrade OK"
 psql -d committee_test -f tests/db/rules_test.sql

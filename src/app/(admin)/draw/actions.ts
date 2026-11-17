@@ -60,3 +60,39 @@ export async function deleteDraw(drawId: string, reason: string): Promise<Action
     return { ok: false, error: friendlyError(e) };
   }
 }
+
+async function ownerRpc(fn: string, args: Record<string, unknown>, done: (d: Record<string, unknown>) => string): Promise<ActionResult> {
+  try {
+    const { db } = await adminForAction();
+    const { data, error } = await db.rpc(fn, args);
+    if (error) return { ok: false, error: friendlyError(error) };
+    revalidatePath("/", "layout");
+    return { ok: true, message: done((data ?? {}) as Record<string, unknown>) };
+  } catch (e) {
+    return { ok: false, error: friendlyError(e) };
+  }
+}
+
+/** Owner: keep a month's payout aside for financial support instead of a draw. */
+export async function reserveMonth(scheduleId: string, reason: string) {
+  return ownerRpc("reserve_month", { p_schedule_id: scheduleId, p_reason: reason.trim() }, (d) => `Month ${d.month_number} is now reserved.`);
+}
+
+/** Owner: give a reserved month's payout to a member, as their payout or as help only. */
+export async function giveReserve(scheduleId: string, memberId: string, type: "payout" | "help", note: string) {
+  return ownerRpc("give_reserve", { p_schedule_id: scheduleId, p_member_id: memberId, p_type: type, p_note: note.trim() }, (d) =>
+    d.type === "payout"
+      ? `Month ${d.month_number} reserve given to Slot ${d.slot} as their committee payout.`
+      : `Month ${d.month_number} reserve given to Slot ${d.slot} as help. They stay in future draws.`,
+  );
+}
+
+/** Owner: cancel a reserve gift; the month is reserved again. */
+export async function undoReserveGift(scheduleId: string, reason: string) {
+  return ownerRpc("undo_reserve_gift", { p_schedule_id: scheduleId, p_reason: reason.trim() }, (d) => `Month ${d.month_number} is reserved again.`);
+}
+
+/** Owner: release a reserve; the month goes back to a normal draw. */
+export async function releaseReserve(scheduleId: string, reason: string) {
+  return ownerRpc("release_reserve", { p_schedule_id: scheduleId, p_reason: reason.trim() }, (d) => `Month ${d.month_number} is back to a normal draw.`);
+}

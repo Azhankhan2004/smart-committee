@@ -140,7 +140,9 @@ export function planNotifications(input: {
 
     // B. Winner announcement
     if (inWindow(today, dateInMonth(cur.period_month, s.winner_announcement_day))) {
-      if (cur.is_announced) {
+      if (cur.reserve_status && !cur.is_announced) {
+        notes.push(`Month ${cur.month_number} is reserved for financial support, so there is no draw or winner announcement.`);
+      } else if (cur.is_announced) {
         for (const m of active) add({ templateKey: "winner_announcement", scheduleId: cur.id, memberId: m.id, reason: "Winner announcement day" });
       } else if (s.auto_announce_winner && cur.winner_member_id) {
         autoAnnounceScheduleId = cur.id;

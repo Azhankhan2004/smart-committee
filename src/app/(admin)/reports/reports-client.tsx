@@ -49,6 +49,7 @@ const REPORTS = [
   { key: "methods", label: "By payment method" },
   { key: "pending", label: "Pending payments" },
   { key: "winners", label: "Winner history" },
+  { key: "reserves", label: "Reserves" },
   { key: "notifications", label: "Notification history" },
   { key: "progress", label: "Overall progress" },
 ] as const;
@@ -166,6 +167,23 @@ function build(key: ReportKey, d: ReportData, memberFilter: string, methodFilter
           w.void_reason ?? "",
         ]),
       };
+    case "reserves": {
+      const rs = d.schedules.filter((s) => s.reserve_status);
+      return {
+        title: "Reserve months (financial support)",
+        columns: ["Month", "Period", "Amount", "Status", "Given to", "How", "Reason / note"],
+        numeric: [2],
+        rows: rs.map((s) => [
+          s.month_number,
+          monthLabel(s.period_month),
+          m(s.payout_amount),
+          s.reserve_status === "given" ? "Given" : "Kept aside",
+          s.reserve_member_slot ? `Slot ${s.reserve_member_slot}` : "",
+          s.reserve_given_type === "payout" ? "Counts as payout" : s.reserve_given_type === "help" ? "Help only" : "",
+          s.reserve_given_note ?? s.reserve_reason ?? "",
+        ]),
+      };
+    }
     case "notifications":
       return {
         title: "Notification history",

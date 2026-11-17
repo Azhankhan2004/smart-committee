@@ -8,6 +8,8 @@ export type PublicMonth = {
   due_date: string;
   phase: "past" | "current" | "upcoming";
   is_announced: boolean;
+  reserved?: boolean;
+  reserve_used?: boolean | null;
   announced_at: string | null;
   winner_slot: string | null;
   paid_count: number;

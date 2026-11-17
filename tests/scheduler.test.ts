@@ -87,3 +87,13 @@ describe("planNotifications", () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 });
+
+describe("reserved months", () => {
+  it("never auto-announces or announces a winner for a reserved month", () => {
+    const schedules = makeSchedules("2026-11-01", 17).map((s, i) => (i === 0 ? { ...s, reserve_status: "reserved" as const, winner_member_id: null, winner_slot: null } : s));
+    const plan = planNotifications({ settings: { ...settings, auto_announce_winner: true }, today: "2026-11-15", schedules, members, payments: payments(schedules) });
+    expect(plan.autoAnnounceScheduleId).toBeNull();
+    expect(keysOf(plan, "winner_announcement")).toHaveLength(0);
+    expect(plan.notes.join(" ")).toContain("reserved for financial support");
+  });
+});

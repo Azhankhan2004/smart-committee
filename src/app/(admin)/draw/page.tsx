@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/auth";
 import { getDraws, getMembers, getSchedules, getSettings } from "@/lib/data";
 import { formatDateTime, monthLabel } from "@/lib/dates";
 import { DeleteDrawButton, DrawClient } from "./draw-client";
+import { ReservePanel } from "./reserve-panel";
 
 export const metadata = { title: "Lucky draw" };
 
@@ -18,9 +19,10 @@ export default async function DrawPage({ searchParams }: { searchParams: Promise
   ]);
   if (!settings || schedules.length === 0) return <EmptyState title="No schedule yet" />;
 
-  const open = schedules.filter((s) => !s.is_announced && s.phase !== "upcoming");
-  const requested = schedules.find((s) => s.month_number === Number(sp.month));
-  const selected = requested && !requested.is_announced && requested.phase !== "upcoming" ? requested : open[0] ?? null;
+  // Open = no winner yet and not reserved. Upcoming months can be drawn in advance.
+  const open = schedules.filter((s) => !s.is_announced && !s.reserve_status);
+  const requested = open.find((s) => s.month_number === Number(sp.month));
+  const selected = requested ?? open[0] ?? null;
   const eligible = members.filter((m) => m.is_active && !m.has_won).map((m) => m.slot_code);
   const monthById = new Map(schedules.map((s) => [s.id, s]));
 
@@ -35,12 +37,31 @@ export default async function DrawPage({ searchParams }: { searchParams: Promise
         </div>
       )}
       <DrawClient
-        months={open.map((s) => ({ id: s.id, month_number: s.month_number, label: monthLabel(s.period_month) }))}
+        months={open.map((s) => ({ id: s.id, month_number: s.month_number, label: monthLabel(s.period_month), upcoming: s.phase === "upcoming" }))}
         selectedId={selected?.id ?? null}
         eligible={eligible}
         slug={committee.slug}
         payout={selected?.payout_amount ?? settings.payout_amount}
         currency={settings.currency}
+      />
+      <ReservePanel
+        isOwner={isOwner}
+        currency={settings.currency}
+        open={open.map((s) => ({ id: s.id, month_number: s.month_number, label: monthLabel(s.period_month), payout: s.payout_amount }))}
+        reserved={schedules
+          .filter((s) => s.reserve_status)
+          .map((s) => ({
+            id: s.id,
+            month_number: s.month_number,
+            label: monthLabel(s.period_month),
+            payout: s.payout_amount,
+            status: s.reserve_status!,
+            type: s.reserve_given_type,
+            slot: s.reserve_member_slot,
+            reason: s.reserve_reason,
+            note: s.reserve_given_note,
+          }))}
+        members={members.filter((m) => m.is_active).map((m) => ({ id: m.id, slot: m.slot_code, name: m.full_name, hasWon: m.has_won }))}
       />
       <Card className="mt-6" title="Draw history">
         {draws.length === 0 ? (

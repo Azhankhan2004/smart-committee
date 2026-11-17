@@ -89,3 +89,33 @@ select action, summary, reason from audit_logs where action='committee.start_mon
 \echo '=== V21-6 direct date edit on a month with history is still blocked (expect 1 error)'
 update monthly_schedules set due_date = due_date + 1 where month_number=1 and committee_id=(select id from committees where slug='family-committee');
 
+
+\echo '=== V22-1 owner reserves months 6 and 7; helper cannot (expect 1 error); reason required (expect 1 error)'
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000002","role":"authenticated","email":"helper@test.pk"}';
+select reserve_month((select id from monthly_schedules where committee_id=(select id from committees where slug='family-committee') and month_number=6), 'Kept aside for emergencies');
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000001","role":"authenticated","email":"owner@test.pk"}';
+select reserve_month((select id from monthly_schedules where committee_id=(select id from committees where slug='family-committee') and month_number=6), 'x');
+select reserve_month((select id from monthly_schedules where committee_id=(select id from committees where slug='family-committee') and month_number=6), 'Kept aside for emergencies')->>'month_number' as reserved6;
+select reserve_month((select id from monthly_schedules where committee_id=(select id from committees where slug='family-committee') and month_number=7), 'Kept aside for emergencies')->>'month_number' as reserved7;
+select month_number, winner_slot, reserve_status from v_schedule where committee_id=(select id from committees where slug='family-committee') and month_number between 5 and 8 order by 1;
+\echo '=== V22-2 reserved month cannot be drawn (expect 1 error); advance draw of upcoming months 4 and 5 works'
+select run_lucky_draw((select id from monthly_schedules where committee_id=(select id from committees where slug='family-committee') and month_number=6), 'manual');
+select (run_lucky_draw((select id from monthly_schedules where committee_id=(select id from committees where slug='family-committee') and month_number=4), 'manual')->>'winner_slot') is not null as m4_drawn_in_advance;
+select (run_lucky_draw((select id from monthly_schedules where committee_id=(select id from committees where slug='family-committee') and month_number=5), 'auto')->>'winner_slot') is not null as m5_drawn_in_advance;
+\echo '=== V22-3 scheduler cannot draw a future month (expect 1 error)'
+select run_lucky_draw((select id from monthly_schedules where committee_id=(select id from committees where slug='family-committee') and month_number=8), 'scheduler');
+\echo '=== V22-4 give month 6 as payout to a member who has not won; already-won member rejected (expect 1 error)'
+select give_reserve((select id from monthly_schedules where committee_id=(select id from committees where slug='family-committee') and month_number=6), (select member_id from winners where committee_id=(select id from committees where slug='family-committee') and status='announced' limit 1), 'payout', 'Medical emergency in family');
+select give_reserve((select id from monthly_schedules where committee_id=(select id from committees where slug='family-committee') and month_number=6), (select m.id from members m where m.committee_id=(select id from committees where slug='family-committee') and m.is_active and not exists (select 1 from winners w where w.member_id=m.id and w.status='announced') order by m.slot_code desc limit 1), 'payout', 'Medical emergency in family')->>'type' as given6;
+select month_number, winner_slot, is_announced, reserve_status, reserve_given_type, reserve_member_slot from v_schedule where committee_id=(select id from committees where slug='family-committee') and month_number=6;
+\echo '=== V22-5 give month 7 as help only (member stays eligible); undo month 6 (announcement voided)'
+select give_reserve((select id from monthly_schedules where committee_id=(select id from committees where slug='family-committee') and month_number=7), (select id from members where committee_id=(select id from committees where slug='family-committee') and slot_code='Q'), 'help', 'School fees support')->>'type' as given7;
+select undo_reserve_gift((select id from monthly_schedules where committee_id=(select id from committees where slug='family-committee') and month_number=6), 'Given to the wrong member')->>'month_number' as undone6;
+select month_number, is_announced, reserve_status from v_schedule where committee_id=(select id from committees where slug='family-committee') and month_number in (6,7) order by 1;
+\echo '=== V22-6 release a given reserve rejected (expect 1 error); release month 6 works and fixed order refills'
+select release_reserve((select id from monthly_schedules where committee_id=(select id from committees where slug='family-committee') and month_number=7), 'No longer needed');
+select release_reserve((select id from monthly_schedules where committee_id=(select id from committees where slug='family-committee') and month_number=6), 'No longer needed')->>'month_number' as released6;
+select month_number, reserve_status, winner_slot is not null as planned from v_schedule where committee_id=(select id from committees where slug='family-committee') and month_number=6;
+\echo '=== V22-7 public page shows reserved flags, no names'
+select m->>'month_number' as month, m->>'reserved' as reserved, m->>'reserve_used' as used from jsonb_array_elements(public_committee('family-committee')->'months') m where (m->>'month_number')::int between 6 and 7;
+select action, summary from audit_logs where action like 'reserve.%' order by id;

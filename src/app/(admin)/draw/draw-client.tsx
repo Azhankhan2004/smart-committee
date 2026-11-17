@@ -43,7 +43,7 @@ function Confetti() {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export function DrawClient(props: {
-  months: { id: string; month_number: number; label: string }[];
+  months: { id: string; month_number: number; label: string; upcoming: boolean }[];
   selectedId: string | null;
   eligible: string[];
   slug: string;
@@ -64,7 +64,7 @@ function DrawBoard({
   payout,
   currency,
 }: {
-  months: { id: string; month_number: number; label: string }[];
+  months: { id: string; month_number: number; label: string; upcoming: boolean }[];
   selectedId: string | null;
   eligible: string[];
   slug: string;
@@ -78,15 +78,25 @@ function DrawBoard({
   const [result, setResult] = useState<DrawResult | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [share, setShare] = useState<WinnerNotifyResult | null>(null);
+  // A session draws one or more months, one winner at a time (e.g. 4 winners in one family meeting).
+  const [size, setSize] = useState(1);
+  const [step, setStep] = useState(0);
+  const [confirmed, setConfirmed] = useState(false);
+  const [wins, setWins] = useState<{ month_number: number; label: string; slot: string }[]>([]);
+  const [pool, setPool] = useState(eligible);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const month = months.find((m) => m.id === selectedId) ?? null;
+  const startIdx = Math.max(0, months.findIndex((m) => m.id === selectedId));
+  const maxSize = Math.max(1, Math.min(6, months.length - startIdx, eligible.length));
+  const session = months.slice(startIdx, startIdx + size);
+  const month = session[step] ?? null;
+  const lastOfSession = step >= session.length - 1;
 
   useEffect(() => () => stopSpin(), []);
 
   function randomLetter(not?: string | null) {
-    if (eligible.length === 1) return eligible[0];
-    let l = eligible[Math.floor(Math.random() * eligible.length)];
-    while (l === not) l = eligible[Math.floor(Math.random() * eligible.length)];
+    if (pool.length === 1) return pool[0];
+    let l = pool[Math.floor(Math.random() * pool.length)];
+    while (l === not) l = pool[Math.floor(Math.random() * pool.length)];
     return l;
   }
 
@@ -121,14 +131,15 @@ function DrawBoard({
     if (reportWinnerMessage(r.notify)) setShare(r.notify);
   }
 
-  async function draw() {
-    if (!month) return;
+  async function draw(target = month) {
+    if (!target) return;
     setConfirmOpen(false);
+    setConfirmed(true);
     setResult(null);
     const started = Date.now();
     if (phase !== "spinning") startSpin();
     setPhase(mode === "auto" ? "spinning" : "drawing");
-    const res = await runDraw(month.id, mode);
+    const res = await runDraw(target.id, mode);
     if (!res.ok) {
       stopSpin();
       setPhase("idle");
@@ -139,11 +150,23 @@ function DrawBoard({
     if (mode === "auto") await sleep(Math.max(0, AUTO_SPIN_MS - (Date.now() - started)));
     stopSpin();
     setResult(res.data!);
+    setPool((p) => p.filter((x) => x !== res.data!.winner_slot));
+    setWins((w) => [...w, { month_number: target.month_number, label: target.label, slot: res.data!.winner_slot }]);
     await land(res.data!);
   }
 
+  function nextDraw() {
+    const next = session[step + 1];
+    if (!next) return;
+    setStep(step + 1);
+    setResult(null);
+    setShare(null);
+    if (mode === "auto") void draw(next);
+    else startSpin();
+  }
+
   if (!month) {
-    return <EmptyState title="Nothing to draw right now">Every started month already has a winner. The next draw opens when the next month begins.</EmptyState>;
+    return <EmptyState title="Nothing to draw right now">Every month already has a winner or is reserved.</EmptyState>;
   }
   if (eligible.length === 0) {
     return <EmptyState title="Everyone has already won">There are no members left to draw.</EmptyState>;
@@ -159,8 +182,11 @@ function DrawBoard({
         <div className="relative rounded-2xl bg-gradient-to-br from-brand-800 via-brand-900 to-[#022c22] px-4 py-8 text-white sm:py-10">
           {isWinner && <Confetti />}
           <div className="relative text-center">
-            <p className="text-xs uppercase tracking-[0.3em] text-gold-300">Lucky draw · one winner</p>
+            <p className="text-xs uppercase tracking-[0.3em] text-gold-300">
+              Lucky draw · one winner{session.length > 1 ? ` · draw ${step + 1} of ${session.length}` : ""}
+            </p>
             <p className="mt-1 text-xl font-bold sm:text-2xl">Month {month.month_number} · {month.label}</p>
+            {month.upcoming && <p className="text-xs text-gold-300">Drawn in advance</p>}
             <p className="text-sm text-emerald-100/80">Prize: {formatMoney(payout, currency)}</p>
           </div>
 
@@ -197,7 +223,7 @@ function DrawBoard({
 
           {/* Everyone taking part */}
           <div className="relative mx-auto mt-6 flex max-w-lg flex-wrap justify-center gap-1.5">
-            {eligible.map((s) => {
+            {eligible.filter((s) => pool.includes(s) || s === result?.winner_slot).map((s) => {
               const on = face === s && (busy || isWinner);
               return (
                 <span
@@ -219,14 +245,22 @@ function DrawBoard({
                   <Sparkles className="mr-1 inline size-6 text-gold-300" /> Slot {result.winner_slot} wins month {result.month_number}!
                 </p>
                 <div className="flex flex-wrap justify-center gap-2">
-                  <a className="btn btn-secondary" href={`/banners?month=${result.month_number}`}>View winner banner</a>
-                  <button className="btn btn-ghost text-white hover:bg-white/10" onClick={() => window.location.assign("/draw")}>
-                    <RotateCcw className="size-4" /> Done
-                  </button>
+                  {!lastOfSession ? (
+                    <button className="btn bg-gold-400 px-5 font-bold text-[#3b2a06] hover:bg-gold-300" onClick={nextDraw}>
+                      <Dices className="size-4" /> Next winner ({step + 2} of {session.length}): Month {session[step + 1].month_number}
+                    </button>
+                  ) : (
+                    <>
+                      <a className="btn btn-secondary" href={`/banners?month=${result.month_number}`}>View winner banner</a>
+                      <button className="btn btn-ghost text-white hover:bg-white/10" onClick={() => window.location.assign("/draw")}>
+                        <RotateCcw className="size-4" /> Done
+                      </button>
+                    </>
+                  )}
                 </div>
               </>
             ) : mode === "manual" && phase === "spinning" ? (
-              <button className="btn bg-gold-400 px-6 text-base font-bold text-[#3b2a06] hover:bg-gold-300" onClick={() => setConfirmOpen(true)}>
+              <button className="btn bg-gold-400 px-6 text-base font-bold text-[#3b2a06] hover:bg-gold-300" onClick={() => (confirmed ? void draw() : setConfirmOpen(true))}>
                 <Square className="size-4" /> Stop &amp; pick the winner
               </button>
             ) : (
@@ -236,7 +270,7 @@ function DrawBoard({
                 onClick={() => (mode === "manual" ? startSpin() : setConfirmOpen(true))}
               >
                 {busy ? <Loader2 className="size-5 animate-spin" /> : mode === "manual" ? <Hand className="size-5" /> : <Play className="size-5" />}
-                {busy ? (phase === "landing" ? "Picking the winner…" : "Spinning…") : mode === "manual" ? "Start spinning" : "Start automatic draw"}
+                {busy ? (phase === "landing" ? "Picking the winner…" : "Spinning…") : mode === "manual" ? "Start spinning" : size > 1 ? `Start automatic draw (${size} winners)` : "Start automatic draw"}
               </button>
             )}
           </div>
@@ -266,13 +300,42 @@ function DrawBoard({
               : "You start the spin and press “Stop” when you’re ready, e.g. live in front of the family."}
           </p>
         </Card>
+        <Card title="Winners in this session">
+          <div className="flex flex-wrap gap-1.5">
+            {Array.from({ length: maxSize }, (_, i) => i + 1).map((n) => (
+              <button
+                key={n}
+                disabled={busy || confirmed}
+                onClick={() => setSize(n)}
+                className={`grid size-9 place-items-center rounded-lg border text-sm font-bold transition disabled:opacity-60 ${
+                  size === n ? "border-brand-500 bg-brand-50 text-brand-800 dark:bg-brand-500/10 dark:text-brand-200" : "border-slate-200 dark:border-slate-700"
+                }`}
+                aria-label={`${n} winner${n === 1 ? "" : "s"}`}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+          <p className="mt-3 text-xs text-slate-500">
+            {size === 1 ? "One month is drawn." : `${size} months are drawn one after another, one winner each:`}
+          </p>
+          {size > 1 && (
+            <ul className="mt-1 space-y-0.5 text-xs">
+              {session.map((m, i) => (
+                <li key={m.id} className={i === step && !isWinner ? "font-semibold" : ""}>
+                  {wins[i] ? "✓" : "•"} Month {m.month_number} · {m.label}{wins[i] ? ` → Slot ${wins[i].slot}` : ""}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
         <Card title="Who can win">
           <p className="text-sm text-slate-600 dark:text-slate-300">
-            {eligible.length} member{eligible.length === 1 ? "" : "s"} haven’t won yet. All of them take part, and <b>one</b> winner is picked for this month only.
+            {pool.length} member{pool.length === 1 ? "" : "s"} haven’t won yet. All of them take part, and <b>one</b> winner is picked for each month.
           </p>
         </Card>
         <Notice tone="green" title="One winner per draw">
-          Each draw announces exactly one winner for one month. To draw another month, open it from “Other open months” and run a new draw. A wrong draw can be deleted from the draw history below (owner only).
+          Each draw announces exactly one winner for one month. To announce several winners in one meeting, choose how many under “Winners in this session”. A wrong draw can be deleted from the draw history below (owner only).
         </Notice>
         {months.length > 1 && (
           <Card title="Other open months">
@@ -292,13 +355,15 @@ function DrawBoard({
       <Modal
         open={confirmOpen}
         onClose={() => setConfirmOpen(false)}
-        title={`Draw the month ${month.month_number} winner?`}
-        description="One winner is picked and saved immediately. If it was a mistake, an owner can delete the draw afterwards."
+        title={session.length > 1 ? `Draw ${session.length} winners?` : `Draw the month ${month.month_number} winner?`}
+        description={session.length > 1
+          ? `Months ${session.map((m) => m.month_number).join(", ")} are drawn one after another. Each winner is saved immediately. If one was a mistake, an owner can delete that draw afterwards.`
+          : "One winner is picked and saved immediately. If it was a mistake, an owner can delete the draw afterwards."}
         footer={
           <>
             <button className="btn btn-secondary" onClick={() => setConfirmOpen(false)}>Cancel</button>
-            <button className="btn btn-primary" onClick={() => void draw()}>
-              <Dices className="size-4" /> Yes, draw now
+            <button className="btn btn-primary" onClick={() => void draw(session[0])}>
+              <Dices className="size-4" /> {session.length > 1 ? "Yes, start the draws" : "Yes, draw now"}
             </button>
           </>
         }

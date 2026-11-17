@@ -102,7 +102,7 @@ export default async function PublicCommitteePage({ params }: { params: Promise<
               {next && (
                 <p className="mt-4 rounded-xl bg-slate-100 px-4 py-3 text-sm dark:bg-slate-800">
                   Next: <b>Month {next.month_number}</b> ({monthLabel(next.period_month)}) ·{" "}
-                  {lucky ? "winner by lucky draw" : next.winner_slot ? `Slot ${next.winner_slot}` : "to be decided"}
+                  {next.is_announced ? `Slot ${next.winner_slot} (already drawn)` : next.reserved ? "reserved for financial support" : lucky ? "winner by lucky draw" : next.winner_slot ? `Slot ${next.winner_slot}` : "to be decided"}
                 </p>
               )}
             </div>
@@ -151,6 +151,8 @@ export default async function PublicCommitteePage({ params }: { params: Promise<
                     <td className="whitespace-nowrap">
                       {m.is_announced ? (
                         <span className="font-bold"><Trophy className="mr-1 inline size-4 text-amber-500" />Slot {m.winner_slot}</span>
+                      ) : m.reserved ? (
+                        <span className="text-amber-700 dark:text-amber-300">{m.reserve_used ? "Reserve used (support)" : "Reserved (support fund)"}</span>
                       ) : lucky ? (
                         <span className="text-slate-500"><Dices className="mr-1 inline size-4" />Lucky draw</span>
                       ) : m.winner_slot ? (

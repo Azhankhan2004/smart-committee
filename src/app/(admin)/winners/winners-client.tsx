@@ -161,7 +161,11 @@ export function WinnersClient({
                   <p className="text-xs text-slate-500">{formatMoney(s.payout_amount, currency)}</p>
                 </div>
                 <div className="w-full sm:w-auto sm:min-w-48">
-                  {editMode && !s.is_announced ? (
+                  {s.reserve_status && !s.is_announced ? (
+                    <p className="text-sm text-amber-700 dark:text-amber-300">
+                      {s.reserve_status === "given" ? `Reserve given to Slot ${s.reserve_member_slot} (help)` : "Reserved for financial support"}
+                    </p>
+                  ) : editMode && !s.is_announced ? (
                     <select
                       className={`input py-2 ${draft[s.id] && duplicates.has(draft[s.id]) ? "border-rose-500" : ""}`}
                       value={draft[s.id] ?? ""}
@@ -196,8 +200,18 @@ export function WinnersClient({
                         </>
                       )}
                     </>
+                  ) : s.reserve_status ? (
+                    <>
+                      <Badge tone="amber">{s.reserve_status === "given" ? "Reserve given" : "Reserved"}</Badge>
+                      {!editMode && <Link className="btn btn-ghost btn-sm" href="/draw#reserves">Manage</Link>}
+                    </>
                   ) : s.phase === "upcoming" ? (
-                    <Badge>Upcoming</Badge>
+                    <>
+                      <Badge>Upcoming</Badge>
+                      {luckyDraw && !editMode && (
+                        <Link className="btn btn-ghost btn-sm" href={`/draw?month=${s.month_number}`} title="Draw this month in advance"><Megaphone className="size-4" /> Draw early</Link>
+                      )}
+                    </>
                   ) : (
                     <>
                       <Badge tone="amber">Not announced</Badge>

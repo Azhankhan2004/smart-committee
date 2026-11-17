@@ -111,14 +111,14 @@ export default async function DashboardPage() {
         <StatCard label="Remaining months" value={pos.remainingMonths} hint={`of ${schedules.length} total`} icon={<Hourglass className="size-5" />} accent="slate" />
         <StatCard
           label="This month’s winner"
-          value={cur?.winner_slot ? `Slot ${cur.winner_slot}` : "—"}
-          hint={cur ? (cur.is_announced ? <Badge tone="green">Announced</Badge> : "Not announced yet") : undefined}
+          value={cur?.is_announced || cur?.winner_slot ? `Slot ${cur.winner_slot}` : cur?.reserve_status ? "Reserved" : "—"}
+          hint={cur ? (cur.is_announced ? <Badge tone="green">Announced</Badge> : cur.reserve_status ? "Kept for financial support" : "Not announced yet") : undefined}
           icon={<Trophy className="size-5" />}
           accent="gold"
         />
         <StatCard
           label="Upcoming winner"
-          value={pos.next?.winner_slot ? `Slot ${pos.next.winner_slot}` : "—"}
+          value={pos.next?.winner_slot ? `Slot ${pos.next.winner_slot}` : pos.next?.reserve_status ? "Reserved" : "—"}
           hint={pos.next ? monthLabel(pos.next.period_month) : "No more months"}
           icon={<Trophy className="size-5" />}
           accent="gold"

@@ -92,6 +92,14 @@ export type ScheduleRow = {
   paid_count: number;
   partial_count: number;
   unpaid_count: number;
+  /** Set when the month is reserved for financial support instead of a draw. */
+  reserve_status: "reserved" | "given" | null;
+  reserve_given_type: "payout" | "help" | null;
+  reserve_member_slot: string | null;
+  reserve_reason: string | null;
+  reserve_given_note: string | null;
+  reserved_at: string | null;
+  reserve_given_at: string | null;
 };
 
 export type PaymentRow = {

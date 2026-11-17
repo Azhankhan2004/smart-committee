@@ -27,6 +27,13 @@ export function makeSchedules(start: string, count: number, dueDay = 10): Schedu
       paid_count: 0,
       partial_count: 0,
       unpaid_count: 17,
+      reserve_status: null,
+      reserve_given_type: null,
+      reserve_member_slot: null,
+      reserve_reason: null,
+      reserve_given_note: null,
+      reserved_at: null,
+      reserve_given_at: null,
     };
   });
 }
