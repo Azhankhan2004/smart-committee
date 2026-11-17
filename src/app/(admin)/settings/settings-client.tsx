@@ -416,7 +416,7 @@ export function SettingsClient({
           ) : (
             <p className="mt-3 text-xs text-slate-500">Only owners can add or remove admins.</p>
           )}
-          <p className="mt-2 text-xs text-slate-500">The person must first create an account on the sign-up page.</p>
+          <p className="mt-2 text-xs text-slate-500">Sign-ups are turned off, so only people who already have an account can be added. Leave this empty to stay the only admin.</p>
         </Card>
       </div>
 

@@ -165,7 +165,12 @@ export function AppShell({
       </header>
 
       <main className="px-4 pb-28 pt-5 sm:px-6 lg:ml-64 lg:px-8 lg:pb-10 lg:pt-8">
-        <div className="mx-auto max-w-6xl">{children}</div>
+        <div className="mx-auto max-w-6xl">
+          {children}
+          <footer className="mt-10 border-t border-slate-200 pt-4 text-center text-xs text-slate-400 dark:border-slate-800 dark:text-slate-500">
+            Smart Committee · Made by Azhan Khan
+          </footer>
+        </div>
       </main>
 
       {/* Mobile bottom navigation */}

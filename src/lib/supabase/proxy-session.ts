@@ -4,7 +4,6 @@ import { SUPABASE_ANON_KEY, SUPABASE_URL } from "../env";
 
 const PUBLIC_PATHS = [
   "/login",
-  "/register",
   "/auth/callback",
   "/auth/update-password",
   "/p",

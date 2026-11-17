@@ -192,7 +192,10 @@ export default async function PublicCommitteePage({ params }: { params: Promise<
           </section>
         )}
 
-        <p className="pb-6 text-center text-xs text-slate-400">Names, phone numbers and individual payments are private and only visible to committee admins.</p>
+        <footer className="border-t border-slate-200 pb-6 pt-4 text-center text-xs text-slate-400 dark:border-slate-800">
+          <p>Names, phone numbers and individual payments are private and only visible to committee admins.</p>
+          <p className="mt-1">Made by Azhan Khan</p>
+        </footer>
       </main>
     </div>
   );
