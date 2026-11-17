@@ -4,7 +4,7 @@ import { FileDown, FileSpreadsheet, Loader2 } from "lucide-react";
 import { Card, Progress, StatCard } from "@/components/ui";
 import { STATUS_LABEL } from "@/lib/committee";
 import { formatDate, formatDateTime, monthLabel } from "@/lib/dates";
-import { formatMoney, methodLabel, percent } from "@/lib/format";
+import { PAYMENT_METHODS, formatMoney, methodLabel, percent } from "@/lib/format";
 import { TEMPLATE_LABELS } from "@/lib/templates";
 import type { MemberSummary, PaymentRow, ScheduleRow, TemplateKey } from "@/lib/types";
 
@@ -46,6 +46,7 @@ type Report = { title: string; columns: string[]; rows: Cell[][]; numeric?: numb
 const REPORTS = [
   { key: "collections", label: "Monthly collections" },
   { key: "members", label: "Member payment history" },
+  { key: "methods", label: "By payment method" },
   { key: "pending", label: "Pending payments" },
   { key: "winners", label: "Winner history" },
   { key: "notifications", label: "Notification history" },
@@ -53,7 +54,14 @@ const REPORTS = [
 ] as const;
 type ReportKey = (typeof REPORTS)[number]["key"];
 
-function build(key: ReportKey, d: ReportData, memberFilter: string): Report {
+/** "" = all methods, "none" = paid without a method recorded, else a method value. */
+function matchesMethod(p: PaymentRow, method: string): boolean {
+  if (!method) return true;
+  if (method === "none") return p.amount_paid > 0 && !p.payment_method;
+  return p.payment_method === method;
+}
+
+function build(key: ReportKey, d: ReportData, memberFilter: string, methodFilter: string): Report {
   const m = (n: number) => formatMoney(n, d.currency);
   switch (key) {
     case "collections":
@@ -76,9 +84,11 @@ function build(key: ReportKey, d: ReportData, memberFilter: string): Report {
         ]),
       };
     case "members": {
-      const rows = d.payments.filter((p) => !memberFilter || p.member_id === memberFilter);
+      const rows = d.payments.filter((p) => (!memberFilter || p.member_id === memberFilter) && matchesMethod(p, methodFilter));
+      const who = memberFilter ? `Slot ${d.members.find((x) => x.id === memberFilter)?.slot_code}` : "";
+      const how = methodFilter ? (methodFilter === "none" ? "no method recorded" : methodLabel(methodFilter)) : "";
       return {
-        title: memberFilter ? `Payment history — Slot ${d.members.find((x) => x.id === memberFilter)?.slot_code}` : "Member payment history",
+        title: ["Member payment history", who, how].filter(Boolean).join(" — "),
         columns: ["Slot", "Name", "Month", "Period", "Required", "Paid", "Status", "Payment date", "Method", "Reference", "Remarks"],
         numeric: [4, 5],
         rows: rows.map((p) => [
@@ -94,6 +104,30 @@ function build(key: ReportKey, d: ReportData, memberFilter: string): Report {
           p.transaction_ref ?? "",
           p.remarks ?? "",
         ]),
+      };
+    }
+    case "methods": {
+      const paid = d.payments.filter((p) => p.amount_paid > 0);
+      const keys = [...PAYMENT_METHODS.map((x) => x.value as string), ...new Set(paid.map((p) => p.payment_method ?? "none"))]
+        .filter((v, i, a) => a.indexOf(v) === i);
+      const label = (k: string) => (k === "none" ? "Not recorded" : methodLabel(k));
+      const rows: Cell[][] = [];
+      for (const s of d.schedules.filter((x) => x.period_month <= d.today)) {
+        for (const k of keys) {
+          const list = paid.filter((p) => p.schedule_id === s.id && (p.payment_method ?? "none") === k);
+          if (list.length === 0 && !PAYMENT_METHODS.some((x) => x.value === k)) continue;
+          rows.push([s.month_number, monthLabel(s.period_month), label(k), list.length, m(list.reduce((a, p) => a + p.amount_paid, 0))]);
+        }
+      }
+      for (const k of keys) {
+        const list = paid.filter((p) => (p.payment_method ?? "none") === k);
+        rows.push(["Total", "All months", label(k), list.length, m(list.reduce((a, p) => a + p.amount_paid, 0))]);
+      }
+      return {
+        title: "Collections by payment method",
+        columns: ["Month", "Period", "Payment method", "Payments", "Amount"],
+        numeric: [3, 4],
+        rows,
       };
     }
     case "pending": {
@@ -192,8 +226,9 @@ function download(name: string, blob: Blob) {
 export function ReportsClient({ data }: { data: ReportData }) {
   const [key, setKey] = useState<ReportKey>("collections");
   const [member, setMember] = useState("");
+  const [method, setMethod] = useState("");
   const [busy, setBusy] = useState(false);
-  const report = useMemo(() => build(key, data, member), [key, data, member]);
+  const report = useMemo(() => build(key, data, member, method), [key, data, member, method]);
   const fileBase = `${data.committeeName}-${report.title}-${data.today}`.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 
   const collected = data.schedules.reduce((a, s) => a + s.collected_total, 0);
@@ -259,10 +294,23 @@ export function ReportsClient({ data }: { data: ReportData }) {
         }
       >
         {key === "members" && (
-          <select className="input mb-4 max-w-xs" value={member} onChange={(e) => setMember(e.target.value)} aria-label="Member">
-            <option value="">All members</option>
-            {data.members.map((x) => <option key={x.id} value={x.id}>Slot {x.slot_code}{x.full_name ? ` · ${x.full_name}` : ""}</option>)}
-          </select>
+          <div className="mb-4 flex flex-wrap gap-3">
+            <label className="grid gap-1 text-xs font-medium text-slate-500">
+              Member
+              <select className="input max-w-xs" value={member} onChange={(e) => setMember(e.target.value)} aria-label="Member">
+                <option value="">All members</option>
+                {data.members.map((x) => <option key={x.id} value={x.id}>Slot {x.slot_code}{x.full_name ? ` · ${x.full_name}` : ""}</option>)}
+              </select>
+            </label>
+            <label className="grid gap-1 text-xs font-medium text-slate-500">
+              Payment method
+              <select className="input max-w-xs" value={method} onChange={(e) => setMethod(e.target.value)} aria-label="Payment method">
+                <option value="">All methods</option>
+                {PAYMENT_METHODS.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}
+                <option value="none">Paid, method not recorded</option>
+              </select>
+            </label>
+          </div>
         )}
         <div className="table-wrap -mx-4 -mb-4 sm:-mx-5 sm:-mb-5">
           <table className="table">

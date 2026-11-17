@@ -24,7 +24,9 @@ It verifies, among other things:
 - wrong confirmation slot, duplicate announcement and future-month announcement are rejected
 - locked months can’t be reassigned, and duplicate winners in the order are rejected
 - only owners can void, and a reason is required
-- start month is locked after history exists, and amount changes only affect months without history
+- start month can only move through `change_start_month` (owner + reason) after history exists; records stay on their month numbers; amount changes only affect months without history
+- lucky draw picks one winner from all eligible members; only an owner can delete a draw (announcement voided, month re-opens)
+- payment methods: `cash_najma` / `online_najma` accepted, unknown values rejected
 - deactivation keeps history, and the audit log can’t be deleted
 
 ## 3. Manual test checklist (after setup)

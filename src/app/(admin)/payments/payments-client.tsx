@@ -166,7 +166,7 @@ export function PaymentsClient({
         footer={
           <>
             <button className="btn btn-secondary" onClick={() => setEditing(null)}>Cancel</button>
-            <button className="btn btn-primary" onClick={submit} disabled={pending}>
+            <button className="btn btn-primary" onClick={submit} disabled={pending || (amountNum > 0 && !form.method)}>
               {pending ? <Loader2 className="size-4 animate-spin" /> : <Receipt className="size-4" />} Confirm & save
             </button>
           </>
@@ -180,10 +180,13 @@ export function PaymentsClient({
             <Field label="Payment date" htmlFor="pdate">
               <input id="pdate" className="input" type="date" max={today} value={form.date} disabled={amountNum === 0} onChange={(e) => setForm({ ...form, date: e.target.value })} />
             </Field>
-            <Field label="Method" htmlFor="method">
+            <Field label="Payment method" htmlFor="method" hint={amountNum > 0 && !form.method ? "Required: choose Cash or Online." : undefined}>
               <select id="method" className="input" value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}>
                 <option value="">Select…</option>
                 {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                {form.method && !PAYMENT_METHODS.some((m) => m.value === form.method) && (
+                  <option value={form.method}>{methodLabel(form.method)} (old)</option>
+                )}
               </select>
             </Field>
             <Field label="Transaction reference" htmlFor="ref">

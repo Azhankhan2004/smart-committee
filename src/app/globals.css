@@ -115,3 +115,11 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .confetti-piece { display: none; }
 }
+
+/* Lucky draw: each new letter pops in */
+@keyframes draw-tick {
+  from { transform: scale(0.94) rotate(-2deg); filter: brightness(1.25); }
+  to { transform: scale(1) rotate(0); filter: none; }
+}
+.draw-tick { animation: draw-tick 120ms ease-out; }
+@media (prefers-reduced-motion: reduce) { .draw-tick { animation: none; } }

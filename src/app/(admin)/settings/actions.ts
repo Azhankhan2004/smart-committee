@@ -191,3 +191,23 @@ export async function sendTestMessage(phone: string): Promise<ActionResult> {
     return { ok: false, error: friendlyError(e) };
   }
 }
+
+/** Owner only: move month 1 to another calendar month. Every month keeps its payments and winner. */
+export async function changeStartMonth(newStartMonth: string, reason: string): Promise<ActionResult> {
+  try {
+    const { db, committeeId } = await adminForAction();
+    if (!/^\d{4}-\d{2}$/.test(newStartMonth)) return { ok: false, error: "Please choose the new start month." };
+    if (reason.trim().length < 5) return { ok: false, error: "Please give a clear reason (at least 5 characters)." };
+    const { data, error } = await db.rpc("change_start_month", {
+      p_committee_id: committeeId,
+      p_new_start: `${newStartMonth}-01`,
+      p_reason: reason.trim(),
+    });
+    if (error) return { ok: false, error: friendlyError(error) };
+    const r = data as { months: number; payment_rows_added: number };
+    revalidatePath("/", "layout");
+    return { ok: true, message: `Start month changed. ${r.months} months moved; all payments and winners stayed with their month.` };
+  } catch (e) {
+    return { ok: false, error: friendlyError(e) };
+  }
+}

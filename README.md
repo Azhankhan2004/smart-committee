@@ -18,7 +18,7 @@ A **multi-committee platform**: anyone can register, create their own committee,
 | **Dashboard** | Committee amount, total collected, current & upcoming winner, paid / pending count, completion %, remaining months, next deadline, chart, "who has paid" |
 | **Members** | Alphabetical slots (A–Q by default), optional real name, WhatsApp number, joining month, winner month, payment history, deactivate / reactivate |
 | **Winners** | Fixed order (editable) **or** monthly lucky draw. Announce with typed confirmation; duplicates blocked; owner-only corrections with reason |
-| **Lucky draw** | Dedicated page with 4 shuffling cards, **automatic** or **manual** (stop when you like) mode. The winner is chosen on the server with secure randomness, saved, announced and messaged automatically. Full draw history. Can also run by itself on the announcement day. |
+| **Lucky draw** | Dedicated page with one spinning card: **one winner per draw**, **automatic** or **manual** (stop when you like) mode. Every member who hasn't won takes part; the winner is chosen on the server with secure randomness, saved, announced and messaged automatically. Full draw history; an owner can **delete a wrong draw** (the month re-opens). Can also run by itself on the announcement day. |
 | **Winner banners** | A unique design for every letter A–Q (own colours + pattern). A personalised 1080×1080 PNG banner is generated automatically for each winner, shown in the app and on the public page, downloadable, and attached to the winner's WhatsApp message. |
 | **Public page** | `/p/<committee>` — letters A–Q only, winners by letter, schedule, draw history. No names, numbers or individual payments. Can be switched off. |
 | **Payments** | Per member per month: status (Pending / Paid / Partially paid / Overdue), date, method, reference, remarks |
@@ -48,7 +48,7 @@ You need **Node.js 20.9+** and a free **Supabase** account.
 2. Open **SQL Editor** → **New query**, paste the whole of `supabase/setup_all.sql`, then click **Run**.
    **Already running the older single-committee version?** Run only `supabase/migrations/20261117000004_multi_committee.sql` instead — it upgrades in place and keeps all data (see docs/UPGRADE_V2.md).
    This creates all tables, security rules, functions, the 17 slots (A–Q), the 6 message templates and the 17-month schedule starting **this month**.
-   - Committee started in a different month? Change it later in **Settings → Start month** (allowed until the first payment is recorded).
+   - Committee started in a different month? Change it in **Settings → Start month**. After payments exist, an owner uses **Change start month**: every month keeps its number, payments and winner; only the calendar months move.
    - Prefer separate files? Run `supabase/migrations/*.sql` in order, then `supabase/seed.sql`.
 3. **Authentication → Sign In / Providers → Email**: turn **off** “Allow new users to sign up”. Only people you create can log in.
 

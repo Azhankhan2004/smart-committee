@@ -177,16 +177,12 @@ export default async function PublicCommitteePage({ params }: { params: Promise<
               {c.draws.map((d, i) => (
                 <li key={i} className="card card-pad">
                   <p className="text-sm text-slate-500">Month {d.month_number} · {formatDateTime(d.created_at)}</p>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    {d.candidates.map((s) => (
-                      <span
-                        key={s}
-                        className={`grid size-10 place-items-center rounded-xl text-lg font-black ${s === d.winner_slot ? "bg-amber-400 text-amber-950 ring-2 ring-amber-300" : "bg-slate-100 text-slate-500 dark:bg-slate-800"}`}
-                      >
-                        {s}
-                      </span>
-                    ))}
-                    <span className="ml-1 text-sm font-semibold">→ Slot {d.winner_slot} won</span>
+                  <div className="mt-2 flex items-center gap-3">
+                    <span className="grid size-12 place-items-center rounded-xl bg-amber-400 text-2xl font-black text-amber-950 ring-2 ring-amber-300">{d.winner_slot}</span>
+                    <span className="text-sm">
+                      <b>Slot {d.winner_slot} won</b>
+                      <span className="block text-slate-500">Drawn from {d.candidates.length} member{d.candidates.length === 1 ? "" : "s"} who hadn’t won yet</span>
+                    </span>
                   </div>
                 </li>
               ))}

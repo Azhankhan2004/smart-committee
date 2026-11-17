@@ -2,6 +2,7 @@
 import { useState, useTransition } from "react";
 import { CheckCircle2, Copy, Loader2, Play, Save, Search, Send, Trash2, UserPlus, XCircle } from "lucide-react";
 import { toast } from "sonner";
+import { Modal } from "@/components/modal";
 import { Badge, Card, Field, Notice } from "@/components/ui";
 import { formatMoney } from "@/lib/format";
 import type { SchedulerReport } from "@/lib/scheduler-engine";
@@ -9,6 +10,7 @@ import { TEMPLATE_LABELS } from "@/lib/templates";
 import type { Settings } from "@/lib/types";
 import type { WhatsAppStatus } from "@/lib/whatsapp";
 import {
+  changeStartMonth,
   addAdmin, clearWhatsApp, removeAdmin, runSchedulerNow, saveLogo, savePublicPage, saveSettings, saveWhatsApp, sendTestMessage, type SettingsInput,
 } from "./actions";
 
@@ -93,6 +95,7 @@ export function SettingsClient({
     });
   const publicUrl = `${server.appUrl}/p/${committee.slug}`;
   const [f, setF] = useState<SettingsInput>(initial);
+  const [move, setMove] = useState<{ month: string; reason: string } | null>(null);
   const [pending, start] = useTransition();
   const [running, startRun] = useTransition();
   const [report, setReport] = useState<SchedulerReport | null>(null);
@@ -155,8 +158,15 @@ export function SettingsClient({
             >
               <input id="po" className="input" type="number" min={1} value={f.payout_amount} onChange={num("payout_amount")} />
             </Field>
-            <Field label="Start month" htmlFor="sm" hint={hasHistory ? "Locked: payments have already been recorded." : "Month 1 of the committee."}>
-              <input id="sm" className="input" type="month" disabled={hasHistory} value={f.start_month.slice(0, 7)} onChange={(e) => set("start_month", `${e.target.value}-01`)} />
+            <Field label="Start month" htmlFor="sm" hint={hasHistory ? "Payments are recorded, so use “Change start month” to move it safely." : "Month 1 of the committee."}>
+              <div className="grid gap-2">
+                <input id="sm" className="input" type="month" disabled={hasHistory} value={f.start_month.slice(0, 7)} onChange={(e) => set("start_month", `${e.target.value}-01`)} />
+                {hasHistory && isOwner && (
+                  <button type="button" className="btn btn-secondary btn-sm justify-self-start" onClick={() => { setMove({ month: f.start_month.slice(0, 7), reason: "" }); }}>
+                    Change start month
+                  </button>
+                )}
+              </div>
             </Field>
             <Field label="Time zone" htmlFor="tz">
               <input id="tz" className="input" value={f.timezone} onChange={(e) => set("timezone", e.target.value)} />
@@ -409,6 +419,36 @@ export function SettingsClient({
           <p className="mt-2 text-xs text-slate-500">The person must first create an account on the sign-up page.</p>
         </Card>
       </div>
+
+      <Modal
+        open={!!move}
+        onClose={() => setMove(null)}
+        title="Change the committee start month"
+        description="Every month keeps its number, its payments and its winner. Only the calendar months move. Example: if month 1 becomes September, month 3 becomes November."
+        footer={
+          <>
+            <button className="btn btn-secondary" onClick={() => setMove(null)}>Cancel</button>
+            <button
+              className="btn btn-primary"
+              disabled={busy || !move || move.month === f.start_month.slice(0, 7) || move.reason.trim().length < 5}
+              onClick={() => move && act(() => changeStartMonth(move.month, move.reason), () => { setF({ ...f, start_month: `${move.month}-01` }); setMove(null); })}
+            >
+              {busy && <Loader2 className="size-4 animate-spin" />} Change start month
+            </button>
+          </>
+        }
+      >
+        {move && (
+          <div className="space-y-4">
+            <Field label="Month 1 should be" htmlFor="mv-month">
+              <input id="mv-month" className="input" type="month" value={move.month} onChange={(e) => setMove({ ...move, month: e.target.value })} />
+            </Field>
+            <Field label="Reason (saved in the activity log)" htmlFor="mv-reason" hint="At least 5 characters.">
+              <input id="mv-reason" className="input" value={move.reason} onChange={(e) => setMove({ ...move, reason: e.target.value })} placeholder="e.g. The committee actually started in September" />
+            </Field>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

@@ -19,7 +19,7 @@ Browser (admin)  ──►  Next.js on Vercel  ──►  Supabase PostgreSQL (R
 | Table | Purpose | Key rules |
 |---|---|---|
 | `admin_users` | Who can use the app (`owner` / `admin`) | Linked 1:1 to `auth.users` |
-| `committee_settings` | Single row: name, members, contribution, payout, start month, time zone, reminder days, auto-send switches | Start month locked once history exists |
+| `committee_settings` | Single row: name, members, contribution, payout, start month, time zone, reminder days, auto-send switches | Start month moves only via `change_start_month` once history exists (records stay on their month numbers) |
 | `members` | Slot code (A, B, …), optional name, E.164 WhatsApp number, joining month, active flag | Slot unique, phone format checked, no deletes (deactivate instead) |
 | `monthly_schedules` | One row per committee month: dates, contribution & payout snapshot, designated winner | Unique month / period / winner (deferrable for swaps); dates & amounts frozen once the month has history |
 | `winners` | Announcements with time, admin, notes; voided rows kept | Partial unique index: one active announcement per month, one win per member |

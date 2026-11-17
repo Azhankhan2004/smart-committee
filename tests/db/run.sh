@@ -13,5 +13,7 @@ for f in tests/db/supabase_stub.sql supabase/migrations/2026111100000*.sql supab
   $P -d committee_test -f "$f" > /dev/null
 done
 $P -d committee_test -f supabase/migrations/20261117000004_multi_committee.sql > /dev/null
+$P -d committee_test -f supabase/migrations/20261117000005_fixes_v2_1.sql > /dev/null
+$P -d committee_test -f supabase/migrations/20261117000005_fixes_v2_1.sql > /dev/null  # re-runnable
 echo "Upgrade OK"
 psql -d committee_test -f tests/db/rules_test.sql

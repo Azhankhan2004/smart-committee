@@ -20,22 +20,33 @@ export function Modal({
   wide?: boolean;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  // Keep the latest onClose without re-running the open effect on every render
+  // (parents usually pass an inline arrow; re-running stole focus on each keystroke).
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCloseRef.current();
     document.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    panelRef.current?.querySelector<HTMLElement>("input, select, textarea, button")?.focus();
+    // Focus once, when the dialog opens: first field in the body, else the panel.
+    const first =
+      bodyRef.current?.querySelector<HTMLElement>("input:not([type=hidden]), select, textarea") ??
+      panelRef.current?.querySelector<HTMLElement>("button");
+    first?.focus();
     return () => {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-label={title}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center text-left font-normal whitespace-normal sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-label={title}>
       <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm" onClick={onClose} />
       <div
         ref={panelRef}
@@ -50,7 +61,7 @@ export function Modal({
             <X className="size-4" />
           </button>
         </div>
-        <div className="px-5 py-4">{children}</div>
+        <div ref={bodyRef} className="px-5 py-4">{children}</div>
         {footer && (
           <div className="sticky bottom-0 flex flex-col-reverse gap-2 border-t border-slate-100 bg-white px-5 py-4 pb-safe sm:flex-row sm:justify-end dark:border-slate-800 dark:bg-slate-900">
             {footer}

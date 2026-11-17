@@ -16,7 +16,14 @@ export function cn(...classes: Array<string | false | null | undefined>): string
   return classes.filter(Boolean).join(" ");
 }
 
+/** The methods offered when recording a payment. */
 export const PAYMENT_METHODS = [
+  { value: "cash_najma", label: "Cash, Najma Israr" },
+  { value: "online_najma", label: "Online, Najma Israr" },
+] as const;
+
+/** Older methods: still shown correctly on payments recorded before v2.1. */
+const LEGACY_METHODS = [
   { value: "cash", label: "Cash" },
   { value: "bank_transfer", label: "Bank transfer" },
   { value: "easypaisa", label: "Easypaisa" },
@@ -26,7 +33,7 @@ export const PAYMENT_METHODS = [
 ] as const;
 
 export function methodLabel(value: string | null | undefined): string {
-  return PAYMENT_METHODS.find((m) => m.value === value)?.label ?? "—";
+  return [...PAYMENT_METHODS, ...LEGACY_METHODS].find((m) => m.value === value)?.label ?? "—";
 }
 
 /** Turns a Postgres/Supabase error into a sentence a family member can understand. */

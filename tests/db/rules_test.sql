@@ -50,3 +50,42 @@ select remove_committee_admin((select id from committees), '00000000-0000-0000-0
 \echo '=== R1 randomness: 40000 picks of 4 (expect ~10000 each)'
 \c committee_test postgres
 select r, count(*) from (select secure_random_below(4) r from generate_series(1,40000)) z group by 1 order by 1;
+\echo '=== V21-1 draw picks ONE winner from ALL eligible members (new committee: 6 members, 1 already won)'
+\c committee_test authenticator
+set role authenticated; set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000003","role":"authenticated","email":"newuser@test.pk"}';
+select candidate_slots, array_length(candidate_slots,1) as eligible_count, winner_slot from draws;
+\echo '=== V21-2 helper (admin) cannot delete a draw; reason required (expect 2 errors)'
+\c committee_test postgres
+insert into committee_admins (committee_id, user_id, email, role) select id, '00000000-0000-0000-0000-000000000002', 'helper@test.pk', 'admin' from committees where slug='cousins-kameti' on conflict do nothing;
+\c committee_test authenticator
+set role authenticated; set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000002","role":"authenticated","email":"helper@test.pk"}';
+select delete_draw((select id from draws limit 1), 'wrong draw by mistake');
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000003","role":"authenticated","email":"newuser@test.pk"}';
+select delete_draw((select id from draws limit 1), 'x');
+\echo '=== V21-3 owner deletes the draw: announcement voided, month open again, draw again works'
+select delete_draw((select id from draws limit 1), 'Wrong draw by mistake')->>'announcement_voided' as voided;
+select count(*) as draws_left, (select is_announced from v_schedule where month_number=1 and committee_id=(select id from committees where slug='cousins-kameti')) as m1_announced from draws;
+select (run_lucky_draw((select id from monthly_schedules where month_number=1 and committee_id=(select id from committees where slug='cousins-kameti')), 'manual')->>'winner_slot') is not null as redrawn;
+select count(*) as draws_now from draws;
+\echo '=== V21-4 payment methods: new values accepted, unknown rejected (expect 1 error)'
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000001","role":"authenticated","email":"owner@test.pk"}';
+select (record_payment((select p.id from v_payments p where p.slot_code='C' and p.month_number=1), 10000, current_date, 'cash_najma', null, null)->>'status') as cash_najma;
+select (record_payment((select p.id from v_payments p where p.slot_code='D' and p.month_number=1), 10000, current_date, 'online_najma', 'TRX1', null)->>'status') as online_najma;
+select record_payment((select p.id from v_payments p where p.slot_code='E' and p.month_number=1), 10000, current_date, 'bitcoin', null, null);
+\echo '=== V21-5 start month: helper cannot; owner moves family committee 2 months earlier; data stays with month numbers'
+select month_number, period_month, due_date from monthly_schedules where month_number in (1,2,17) and committee_id=(select id from committees where slug='family-committee') order by 1;
+select slot_code, amount_paid, payment_method from v_payments where month_number=1 and amount_paid>0 and committee_id=(select id from committees where slug='family-committee') order by 1;
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000002","role":"authenticated","email":"helper@test.pk"}';
+select change_start_month((select id from committees where slug='family-committee'), (select start_month - interval '2 months' from committee_settings where committee_id=(select id from committees where slug='family-committee'))::date, 'Committee really started earlier');
+set request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000000001","role":"authenticated","email":"owner@test.pk"}';
+update committee_settings set start_month = (start_month - interval '2 months')::date where committee_id=(select id from committees where slug='family-committee');
+select change_start_month((select id from committees where slug='family-committee'), (select start_month - interval '2 months' from committee_settings where committee_id=(select id from committees where slug='family-committee'))::date, 'Committee really started earlier');
+select month_number, period_month, due_date from monthly_schedules where month_number in (1,2,17) and committee_id=(select id from committees where slug='family-committee') order by 1;
+select slot_code, amount_paid, payment_method from v_payments where month_number=1 and amount_paid>0 and committee_id=(select id from committees where slug='family-committee') order by 1;
+select month_number, period_month, winner_slot, is_announced, phase from v_schedule where month_number<=3 and committee_id=(select id from committees where slug='family-committee') order by 1;
+select count(distinct joined_month) as join_months, min(joined_month) from members where committee_id=(select id from committees where slug='family-committee');
+select count(*) as payment_rows, count(*) filter (where amount_paid>0) as paid_rows from payments where committee_id=(select id from committees where slug='family-committee');
+select action, summary, reason from audit_logs where action='committee.start_month_changed';
+\echo '=== V21-6 direct date edit on a month with history is still blocked (expect 1 error)'
+update monthly_schedules set due_date = due_date + 1 where month_number=1 and committee_id=(select id from committees where slug='family-committee');
+

@@ -2,13 +2,14 @@ import { Card, EmptyState, Notice, PageHeader } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { getDraws, getMembers, getSchedules, getSettings } from "@/lib/data";
 import { formatDateTime, monthLabel } from "@/lib/dates";
-import { DrawClient } from "./draw-client";
+import { DeleteDrawButton, DrawClient } from "./draw-client";
 
 export const metadata = { title: "Lucky draw" };
 
 export default async function DrawPage({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
   const sp = await searchParams;
-  const { db, committeeId, committee } = await requireAdmin();
+  const { db, committeeId, committee, role } = await requireAdmin();
+  const isOwner = role === "owner";
   const [settings, schedules, members, draws] = await Promise.all([
     getSettings(db, committeeId),
     getSchedules(db, committeeId),
@@ -25,7 +26,7 @@ export default async function DrawPage({ searchParams }: { searchParams: Promise
 
   return (
     <>
-      <PageHeader title="Lucky draw" description="A fair, recorded draw. The winner is picked securely on the server; the cards only reveal the result." />
+      <PageHeader title="Lucky draw" description="One winner per draw. The winner is picked securely on the server from everyone who hasn’t won yet; the spinning card only reveals the result." />
       {settings.winner_selection !== "lucky_draw" && (
         <div className="mb-4">
           <Notice tone="blue">
@@ -45,26 +46,34 @@ export default async function DrawPage({ searchParams }: { searchParams: Promise
         {draws.length === 0 ? (
           <p className="text-sm text-slate-500">No draws yet.</p>
         ) : (
-          <div className="table-wrap -mx-4 -my-4 sm:-mx-5 sm:-my-5">
+          <>
+          {isOwner && <p className="mb-3 text-sm text-slate-500">Drawn by mistake? Press the bin icon to delete that draw. The month opens again for a new draw.</p>}
+          <div className="table-wrap -mx-4 -mb-4 sm:-mx-5 sm:-mb-5">
             <table className="table">
-              <thead><tr><th>Month</th><th>Cards</th><th>Winner</th><th>Mode</th><th>When</th><th>By</th></tr></thead>
+              <thead><tr><th>Month</th><th>Winner</th><th>Took part</th><th>Mode</th><th>When</th><th>By</th>{isOwner && <th />}</tr></thead>
               <tbody>
                 {draws.map((d) => {
                   const m = monthById.get(d.schedule_id);
                   return (
                     <tr key={d.id}>
                       <td className="whitespace-nowrap">{m ? `${m.month_number}. ${monthLabel(m.period_month)}` : "—"}</td>
-                      <td className="whitespace-nowrap">{d.candidate_slots.join(" · ")}</td>
                       <td className="font-bold">Slot {d.winner_slot}</td>
+                      <td className="max-w-56 truncate text-slate-500" title={d.candidate_slots.join(", ")}>{d.candidate_slots.length} members</td>
                       <td className="capitalize">{d.mode}</td>
                       <td className="whitespace-nowrap">{formatDateTime(d.created_at, settings.timezone)}</td>
                       <td className="text-slate-500">{d.created_by_email ?? "system"}</td>
+                      {isOwner && (
+                        <td className="text-right">
+                          <DeleteDrawButton drawId={d.id} label={`Month ${m?.month_number ?? "?"}: Slot ${d.winner_slot}`} />
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
+          </>
         )}
       </Card>
     </>

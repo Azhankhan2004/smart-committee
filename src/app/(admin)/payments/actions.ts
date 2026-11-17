@@ -30,6 +30,7 @@ export async function recordPayment(input: RecordPaymentInput): Promise<ActionRe
   try {
     const { db, userId, committeeId } = await adminForAction();
     if (!Number.isFinite(input.amount)) return { ok: false, error: "Please enter a valid amount." };
+    if (input.amount > 0 && !input.method) return { ok: false, error: "Please choose the payment method (Cash or Online)." };
     const { error } = await db.rpc("record_payment", {
       p_payment_id: input.paymentId,
       p_amount_paid: input.amount,
